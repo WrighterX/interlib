@@ -1,0 +1,1 @@
+# can run all benchmarks from this file alone via package-level functions
