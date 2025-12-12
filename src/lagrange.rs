@@ -1,8 +1,11 @@
+//! Lagrange Interpolation module
+
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
 
-/// Core Lagrange interpolation function
 pub fn lagrange_interpolation(x_values: &[f64], y_values: &[f64], x: f64) -> f64 {
+    /* Core Lagrange Interpolation function.
+     * Constructs a polynomial that passes through a given set of points.*/
     let n: usize = x_values.len();
     let mut result = 0.0;
     for i in 0..n {

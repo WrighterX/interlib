@@ -1,3 +1,5 @@
+"""A comparing module that provides Lagrange Interpolation's elapsed times from SciPy and interlib libraries."""
+
 from scipy.interpolate import BarycentricInterpolator
 from interlib import LagrangeInterpolator
 import time
