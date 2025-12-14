@@ -14,6 +14,7 @@ python_files = [
     if f.endswith('.py')
     and os.path.isfile(os.path.join(script_dir, f))
     and f != this_script
+    and f != '__init__.py'
 ]
 
 # Launch each script sequentially
@@ -30,4 +31,4 @@ for file in python_files:
     except Exception as e:
         print(f"Failed to launch {file}: {e}")
 
-print("\nAll tests have been launched.")
+print("\nAll benchmarks have been launched.")

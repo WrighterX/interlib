@@ -15,18 +15,30 @@ There are several use cases:
 - Numerical calculations for real-world problems.
 - Engineering datasets interpolation (e.g. temperature data).
 - Signal reconstruction from sampled data.
-- *Etc...*
+- Etc...
 
-Tool up for whatever you have at hand.
+Equip for whatever you have at hand.
 
 ## Examples
-Ways to use the library's methods are generally the same. In case of `LagrangeInterpolator`, we have to create an instance:
+To import the library into your project, include the following line:
+
+```python
+import interlib
+```
+
+Or, if you want to import a concrete method, you can use the following:
+
+```python
+from interlib import LagrangeInterpolator
+```
+
+The ways to use the library's methods are generally the same across all of them. Let's take `LagrangeInterpolator` as an example. First, we have to create an instance:
 
 ```python
 interp = LagrangeInterpolator()
 ```
 
-Then we can define data points and fit them into the instance:
+Then we have to define known data points to fit them into the said instance:
 
 ```python
 x = [1.0, 2.0, 3.0]
@@ -47,4 +59,4 @@ y_new = interp(x_new)
 print(f"Interpolated values: {y_new}")
 ```
 
-at your option.
+at your option and use case.
