@@ -8,6 +8,8 @@ mod quadratic;
 mod cubic_spline;
 mod hermite;
 mod least_squares;
+mod rbf;
+mod chebyshev;
 
 /// Python module definition
 #[pymodule]
@@ -20,6 +22,8 @@ fn interlib(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<cubic_spline::CubicSplineInterpolator>()?;
     m.add_class::<hermite::HermiteInterpolator>()?;
     m.add_class::<least_squares::LeastSquaresInterpolator>()?;
+    m.add_class::<rbf::RBFInterpolator>()?;
+    m.add_class::<chebyshev::ChebyshevInterpolator>()?;
     
     Ok(())
 }
