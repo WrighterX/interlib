@@ -4,20 +4,36 @@
 interlib is an open-source Python library for interpolation methods designed as an alternative to scipy.interpolate. Being built on Rust, it provides reliable and in some cases faster solutions to unknown data point problems. It includes polynomial, piecewise, approximation-based and advanced interpolators for all of your needs.
 
 ## Usage
-All of the library's built-in functions work out of the box, so the only thing you have to do is to import interlib into your project.
+All of the library's built-in functions work out of the box, so the only thing you have to do is to import interlib into your project. In this case we will be using this Git repository directly.
 
 > [!NOTE]
 >
 > At this development stage there's no way to install interlib except this Git repository.
 
-There are several use cases:
+Go to a directory where you want to install the library, and use `git clone` to clone the repository into your system.
+
+When you are in the root folder of interlib, activate virtual environment via `venv`, and install needed dependencies:
+
+```bash
+pip install .
+```
+
+Finally, you build the project:
+
+```bash
+maturin develop
+```
+
+Congrats, you installed interlib into your system!
+
+Now, there are several use cases for it:
 
 - Numerical calculations for real-world problems.
 - Engineering datasets interpolation (e.g. temperature data).
 - Signal reconstruction from sampled data.
 - Etc...
 
-Equip for whatever you have at hand.
+Equip yourself for whatever you have at hand.
 
 ## Examples
 To import the library into your project, include the following line:
