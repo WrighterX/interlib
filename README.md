@@ -1,7 +1,7 @@
 # interlib
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/license/mit)
 
-interlib is an open-source Python library for interpolation methods designed as an alternative to scipy.interpolate. Being built on Rust, it provides reliable and in some cases faster solutions to unknown data point problems. It includes polynomial, piecewise, approximation-based and advanced interpolators for all of your needs.
+interlib is a Python library for interpolation methods designed as an alternative to scipy.interpolate. Being built on Rust, it provides reliable and in some cases faster solutions to unknown data point problems. It includes polynomial, piecewise, approximation-based and advanced interpolators for all of your needs.
 
 ## Usage
 All of the library's built-in functions work out of the box, so the only thing you have to do is to import interlib into your project. In this case we will be using this Git repository directly.
