@@ -16,9 +16,4 @@ dependencies = [
     "numpy",
     "scipy",
     "maturin",
-    "time",
-    "os",
-    "subprocess",
-    "sys",
-    "math",
 ]

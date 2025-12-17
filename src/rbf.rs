@@ -1,7 +1,137 @@
+/// Radial Basis Function (RBF) Interpolation Module
+/// 
+/// This module implements RBF interpolation, which constructs an interpolant
+/// as a weighted sum of radial basis functions centered at data points.
+/// 
+/// # Mathematical Background
+/// 
+/// The RBF interpolant has the form:
+/// 
+/// s(x) = Σᵢ wᵢ φ(||x - xᵢ||, ε)
+/// 
+/// where:
+/// - φ is the radial basis function (kernel)
+/// - ||·|| is the Euclidean distance
+/// - wᵢ are weights found by solving: Φw = y
+/// - ε is the shape parameter
+/// 
+/// The matrix Φᵢⱼ = φ(||xᵢ - xⱼ||) is symmetric and positive definite
+/// for most common kernels.
+/// 
+/// # Available Kernels
+/// 
+/// ## 1. Gaussian
+/// φ(r) = exp(-ε²r²)
+/// - **Properties**: Infinitely smooth (C^∞), compact support in limit
+/// - **Shape**: Bell curve, fast decay
+/// - **Best for**: Smooth functions, general-purpose
+/// - **Epsilon range**: 0.1 - 10
+/// 
+/// ## 2. Multiquadric
+/// φ(r) = √(1 + (εr)²)
+/// - **Properties**: Conditionally positive definite
+/// - **Shape**: Grows with distance
+/// - **Best for**: Scattered data, robust interpolation
+/// - **Epsilon range**: 0.5 - 5
+/// - **Note**: Most commonly used RBF
+/// 
+/// ## 3. Inverse Multiquadric
+/// φ(r) = 1/√(1 + (εr)²)
+/// - **Properties**: Smooth, decreases with distance
+/// - **Shape**: Localized, faster decay than Gaussian
+/// - **Best for**: Smoother interpolation, less oscillatory
+/// - **Epsilon range**: 0.5 - 5
+/// 
+/// ## 4. Thin Plate Spline
+/// φ(r) = r² ln(r)  (r > 0), φ(0) = 0
+/// - **Properties**: Minimizes bending energy
+/// - **Shape**: Logarithmic growth
+/// - **Best for**: Image warping, smooth surfaces
+/// - **Epsilon**: Not used (scale-independent)
+/// - **Note**: Common in computer graphics
+/// 
+/// ## 5. Linear
+/// φ(r) = r
+/// - **Properties**: Simple, continuous
+/// - **Shape**: Linear growth
+/// - **Best for**: Simple interpolation, debugging
+/// - **Epsilon**: Not used
+/// 
+/// # Epsilon Parameter (Shape Parameter)
+/// 
+/// Controls the "width" of basis functions:
+/// - **Small ε** (< 1): Flat, wide basis functions → smoother, more global
+/// - **Large ε** (> 5): Sharp, narrow basis functions → more local, captures detail
+/// - **Optimal ε**: Problem-dependent, often ε ≈ 1/(average spacing)
+/// 
+/// # Characteristics
+/// 
+/// - **Global method**: All points influence the entire interpolation
+/// - **Exact fit**: Passes through all data points
+/// - **Meshfree**: No grid required, handles scattered data
+/// - **Multidimensional**: Easily extends to 2D, 3D, and higher
+/// - **Smooth**: Depends on kernel choice
+/// - **Complexity**: O(n³) for weight computation, O(n) per evaluation
+/// 
+/// # Advantages
+/// 
+/// - Handles irregularly scattered data naturally
+/// - No mesh or grid needed
+/// - Works in any dimension
+/// - Flexible kernel selection
+/// - Theoretically well-understood
+/// 
+/// # Limitations
+/// 
+/// - Computational cost for large n (O(n³) solve)
+/// - Global method: changing one point affects entire curve
+/// - Epsilon selection can be tricky
+/// - Can be ill-conditioned for poorly chosen ε
+/// 
+/// # Use Cases
+/// 
+/// - Scattered data interpolation
+/// - Multidimensional problems (2D, 3D surfaces)
+/// - Irregular point distributions
+/// - Computer graphics and image processing
+/// - Geospatial data (elevation maps)
+/// - Meshfree numerical methods
+/// - Machine learning (RBF networks)
+/// 
+/// # Kernel Selection Guide
+/// 
+/// | Data Characteristics | Recommended Kernel |
+/// |---------------------|-------------------|
+/// | Smooth, general | Gaussian |
+/// | Scattered, robust | Multiquadric |
+/// | Very smooth | Inverse Multiquadric |
+/// | Image/surface | Thin Plate Spline |
+/// | Simple/debug | Linear |
+/// 
+/// # Examples
+/// 
+/// ```python
+/// from interlib import RBFInterpolator
+/// 
+/// # Gaussian kernel (most common)
+/// rbf = RBFInterpolator(kernel="gaussian", epsilon=1.0)
+/// x = [0.0, 1.0, 2.0, 3.0]
+/// y = [0.0, 1.0, 0.5, 2.0]
+/// rbf.fit(x, y)
+/// result = rbf(1.5)
+/// 
+/// # Thin plate spline (for smooth surfaces)
+/// rbf_tps = RBFInterpolator(kernel="thin_plate_spline", epsilon=1.0)
+/// rbf_tps.fit(x, y)
+/// 
+/// # Get weights
+/// weights = rbf.get_weights()
+/// ```
+
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
 
-/// RBF kernel types
+/// RBF kernel types with their evaluation functions
 #[derive(Clone, Copy, Debug)]
 pub enum RBFKernel {
     Gaussian,
@@ -12,7 +142,16 @@ pub enum RBFKernel {
 }
 
 impl RBFKernel {
-    /// Evaluate the RBF kernel at distance r
+    /// Evaluate the RBF kernel at distance r with shape parameter epsilon
+    /// 
+    /// # Arguments
+    /// 
+    /// * `r` - Distance from center
+    /// * `epsilon` - Shape parameter (not used for TPS and Linear)
+    /// 
+    /// # Returns
+    /// 
+    /// Kernel value φ(r, ε)
     fn evaluate(&self, r: f64, epsilon: f64) -> f64 {
         match self {
             RBFKernel::Gaussian => (-epsilon * epsilon * r * r).exp(),
@@ -31,6 +170,17 @@ impl RBFKernel {
 }
 
 /// Solve linear system using Gaussian elimination with partial pivoting
+/// 
+/// Solves the system Φw = y for weights w.
+/// 
+/// # Arguments
+/// 
+/// * `a` - Coefficient matrix (modified in-place)
+/// * `b` - Right-hand side (modified in-place)
+/// 
+/// # Returns
+/// 
+/// Solution vector or error message if singular
 fn solve_linear_system(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Result<Vec<f64>, String> {
     let n = b.len();
     
@@ -81,7 +231,20 @@ fn solve_linear_system(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Result<Vec<f64>
     Ok(x)
 }
 
-/// Compute RBF weights
+/// Compute RBF interpolation weights
+/// 
+/// Solves Φw = y where Φᵢⱼ = φ(||xᵢ - xⱼ||).
+/// 
+/// # Arguments
+/// 
+/// * `x_values` - Data point locations
+/// * `y_values` - Function values at data points
+/// * `kernel` - RBF kernel type
+/// * `epsilon` - Shape parameter
+/// 
+/// # Returns
+/// 
+/// Weight vector w or error message
 fn compute_rbf_weights(
     x_values: &[f64],
     y_values: &[f64],
@@ -90,7 +253,7 @@ fn compute_rbf_weights(
 ) -> Result<Vec<f64>, String> {
     let n = x_values.len();
     
-    // Build the RBF matrix
+    // Build the RBF matrix Φ
     let mut matrix = vec![vec![0.0; n]; n];
     
     for i in 0..n {
@@ -104,6 +267,20 @@ fn compute_rbf_weights(
 }
 
 /// Evaluate RBF interpolation at a point
+/// 
+/// Computes s(x) = Σᵢ wᵢ φ(||x - xᵢ||).
+/// 
+/// # Arguments
+/// 
+/// * `x_values` - Data point locations
+/// * `weights` - Pre-computed weights
+/// * `kernel` - RBF kernel type
+/// * `epsilon` - Shape parameter
+/// * `x` - Evaluation point
+/// 
+/// # Returns
+/// 
+/// Interpolated value at x
 fn rbf_evaluate(
     x_values: &[f64],
     weights: &[f64],
@@ -121,6 +298,18 @@ fn rbf_evaluate(
     result
 }
 
+/// Radial Basis Function Interpolator
+/// 
+/// Global interpolator using weighted radial basis functions.
+/// 
+/// # Attributes
+/// 
+/// * `x_values` - Stored data point locations
+/// * `y_values` - Stored function values
+/// * `weights` - Computed interpolation weights
+/// * `kernel` - Selected RBF kernel
+/// * `epsilon` - Shape parameter
+/// * `fitted` - Whether weights have been computed
 #[pyclass]
 pub struct RBFInterpolator {
     x_values: Vec<f64>,
@@ -133,6 +322,32 @@ pub struct RBFInterpolator {
 
 #[pymethods]
 impl RBFInterpolator {
+    /// Create a new RBF interpolator
+    /// 
+    /// Parameters
+    /// ----------
+    /// kernel : str, default="gaussian"
+    ///     RBF kernel type. Options:
+    ///     - "gaussian": Smooth, general purpose
+    ///     - "multiquadric": Robust, most common
+    ///     - "inverse_multiquadric": Very smooth
+    ///     - "thin_plate_spline": Minimal bending
+    ///     - "linear": Simple, for debugging
+    /// epsilon : float, default=1.0
+    ///     Shape parameter (not used for thin_plate_spline, linear)
+    ///     - Smaller values → flatter, smoother
+    ///     - Larger values → sharper, more local
+    ///     - Typical range: 0.1 to 10
+    /// 
+    /// Returns
+    /// -------
+    /// RBFInterpolator
+    ///     A new, unfitted interpolator instance
+    /// 
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If kernel name is invalid or epsilon is non-positive
     #[new]
     #[pyo3(signature = (kernel="gaussian", epsilon=1.0))]
     pub fn new(kernel: &str, epsilon: f64) -> PyResult<Self> {
@@ -161,7 +376,27 @@ impl RBFInterpolator {
         })
     }
 
-    /// Fit the RBF interpolator with x and y data points
+    /// Fit the RBF interpolator
+    /// 
+    /// Computes interpolation weights by solving the RBF system Φw = y.
+    /// 
+    /// Parameters
+    /// ----------
+    /// x : list of float
+    ///     X coordinates of data points
+    /// y : list of float
+    ///     Y coordinates of data points
+    /// 
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If x and y have different lengths or are empty
+    ///     If weight computation fails (singular matrix)
+    /// 
+    /// Notes
+    /// -----
+    /// Complexity is O(n³) due to solving the linear system.
+    /// For large datasets (n > 1000), consider other methods.
     pub fn fit(&mut self, x: Vec<f64>, y: Vec<f64>) -> PyResult<()> {
         if x.len() != y.len() {
             return Err(PyValueError::new_err(
@@ -188,7 +423,17 @@ impl RBFInterpolator {
         }
     }
 
-    /// Get the RBF weights
+    /// Get the RBF interpolation weights
+    /// 
+    /// Returns
+    /// -------
+    /// list of float
+    ///     Weight vector [w₀, w₁, ..., wₙ₋₁]
+    /// 
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the interpolator has not been fitted
     pub fn get_weights(&self) -> PyResult<Vec<f64>> {
         if !self.fitted {
             return Err(PyValueError::new_err(
@@ -198,7 +443,22 @@ impl RBFInterpolator {
         Ok(self.weights.clone())
     }
 
-    /// Evaluate the interpolation at a single point or multiple points
+    /// Evaluate the interpolation at one or more points
+    /// 
+    /// Parameters
+    /// ----------
+    /// x : float or list of float
+    ///     Point(s) at which to evaluate
+    /// 
+    /// Returns
+    /// -------
+    /// float or list of float
+    ///     Interpolated value(s)
+    /// 
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If not fitted or invalid input type
     pub fn __call__(&self, py: Python<'_>, x: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         if !self.fitted {
             return Err(PyValueError::new_err(
@@ -206,13 +466,11 @@ impl RBFInterpolator {
             ));
         }
 
-        // Try to extract as a single float
         if let Ok(single_x) = x.extract::<f64>() {
             let result = rbf_evaluate(&self.x_values, &self.weights, self.kernel, self.epsilon, single_x);
             return Ok(result.into_pyobject(py)?.into_any().unbind());
         }
 
-        // Try to extract as a list of floats
         if let Ok(x_list) = x.extract::<Vec<f64>>() {
             let results: Vec<f64> = x_list
                 .iter()

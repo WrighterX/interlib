@@ -1,14 +1,110 @@
+/// Piecewise Quadratic Interpolation Module
+/// 
+/// This module implements piecewise quadratic interpolation using overlapping
+/// triplets of consecutive data points to fit parabolas.
+/// 
+/// # Mathematical Background
+/// 
+/// For each interval, uses three consecutive points to fit a quadratic:
+/// 
+/// P(x) = a + b(x - x₀) + c(x - x₀)²
+/// 
+/// The coefficients are found by solving the 3×3 system:
+/// 
+/// | 1  0   0   | | a |   | y₀ |
+/// | 1  h₁  h₁² | | b | = | y₁ |
+/// | 1  h₂  h₂² | | c |   | y₂ |
+/// 
+/// where h₁ = x₁ - x₀, h₂ = x₂ - x₀
+/// 
+/// # Characteristics
+/// 
+/// - **Piecewise approach**: Each interval uses local triplet
+/// - **C⁰ continuous**: Continuous but not necessarily smooth
+/// - **Captures curvature**: Better than linear for curved data
+/// - **Local control**: Uses only 3 nearby points per interval
+/// - **Complexity**: O(1) per evaluation after interval found
+/// 
+/// # Advantages over Linear
+/// 
+/// - Captures quadratic behavior (parabolas)
+/// - Smoother appearance than piecewise linear
+/// - Better accuracy for curved data
+/// - Still computationally efficient
+/// 
+/// # Advantages over Cubic Spline
+/// 
+/// - Simpler to understand and implement
+/// - Faster evaluation
+/// - Less memory (no coefficient table)
+/// - Good middle ground
+/// 
+/// # Limitations
+/// 
+/// - Not C¹ continuous (derivatives may be discontinuous)
+/// - Requires at least 3 points
+/// - Less smooth than cubic spline
+/// - Can still oscillate slightly
+/// 
+/// # Use Cases
+/// 
+/// - Moderately curved data
+/// - When cubic spline is overkill
+/// - Engineering data with some curvature
+/// - Balance between accuracy and simplicity
+/// - Trajectory interpolation
+/// 
+/// # When NOT to Use
+/// 
+/// - Need C¹ or C² continuity
+/// - Very smooth curves required
+/// - Data is nearly linear (use linear instead)
+/// - High-accuracy scientific work (use cubic spline)
+/// 
+/// # Examples
+/// 
+/// ```python
+/// from interlib import QuadraticInterpolator
+/// 
+/// # Create interpolator
+/// interp = QuadraticInterpolator()
+/// 
+/// # Fit with data points (need at least 3)
+/// x = [0.0, 1.0, 2.0, 3.0, 4.0]
+/// y = [0.0, 1.0, 4.0, 9.0, 16.0]  # y = x²
+/// interp.fit(x, y)
+/// 
+/// # Evaluate - should be exact for quadratic data
+/// result = interp(2.5)  # Should be close to 6.25
+/// ```
+
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
 
-/// Solve 3x3 system for quadratic coefficients using Cramer's rule
-/// For quadratic: y = a + b*x + c*x^2
-/// Given three points (x0,y0), (x1,y1), (x2,y2)
+/// Solve 3×3 system for quadratic coefficients using Cramer's rule
+/// 
+/// Given three points (x₀, y₀), (x₁, y₁), (x₂, y₂), computes coefficients
+/// for the quadratic: y = a + b*x + c*x²
+/// 
+/// # Arguments
+/// 
+/// * `x0`, `y0` - First point
+/// * `x1`, `y1` - Second point
+/// * `x2`, `y2` - Third point
+/// 
+/// # Returns
+/// 
+/// Tuple (a, b, c) of quadratic coefficients
+/// 
+/// # Notes
+/// 
+/// If the points are collinear (determinant near zero), falls back to
+/// linear interpolation (c = 0).
 fn solve_quadratic_coefficients(x0: f64, y0: f64, x1: f64, y1: f64, x2: f64, y2: f64) -> (f64, f64, f64) {
-    // System of equations:
-    // a + b*x0 + c*x0^2 = y0
-    // a + b*x1 + c*x1^2 = y1
-    // a + b*x2 + c*x2^2 = y2
+    // System of equations for quadratic a + b*x + c*x²:
+    // a + b*x0 + c*x0² = y0
+    // a + b*x1 + c*x1² = y1
+    // a + b*x2 + c*x2² = y2
     
     let x0_sq = x0 * x0;
     let x1_sq = x1 * x1;
@@ -19,14 +115,14 @@ fn solve_quadratic_coefficients(x0: f64, y0: f64, x1: f64, y1: f64, x2: f64, y2:
             - x0 * (1.0 * x2_sq - 1.0 * x1_sq)
             + x0_sq * (1.0 * x2 - 1.0 * x1);
     
+    // If determinant too small, points are nearly collinear - use linear
     if det.abs() < 1e-10 {
-        // Points are colinear or det is too small, fallback to linear
         let slope = (y1 - y0) / (x1 - x0);
         let intercept = y0 - slope * x0;
         return (intercept, slope, 0.0);
     }
     
-    // Using Cramer's rule
+    // Compute coefficients using Cramer's rule
     let det_a = y0 * (x1 * x2_sq - x2 * x1_sq)
               - y1 * (x0 * x2_sq - x2 * x0_sq)
               + y2 * (x0 * x1_sq - x1 * x0_sq);
@@ -35,7 +131,6 @@ fn solve_quadratic_coefficients(x0: f64, y0: f64, x1: f64, y1: f64, x2: f64, y2:
               - x0 * (y0 * x2_sq - y2 * x0_sq)
               + x0_sq * (y0 * x2 - y2 * x1);
     
-    // Actually, let's use direct formula for c
     let det_c = y0 * (x1 - x2) + y1 * (x2 - x0) + y2 * (x0 - x1);
     
     let a = det_a / det;
@@ -45,12 +140,42 @@ fn solve_quadratic_coefficients(x0: f64, y0: f64, x1: f64, y1: f64, x2: f64, y2:
     (a, b, c)
 }
 
-/// Evaluate quadratic polynomial at x
+/// Evaluate quadratic polynomial at a point
+/// 
+/// Computes a + b*x + c*x² efficiently.
+/// 
+/// # Arguments
+/// 
+/// * `a`, `b`, `c` - Polynomial coefficients
+/// * `x` - Evaluation point
+/// 
+/// # Returns
+/// 
+/// Value of the quadratic at x
 fn eval_quadratic(a: f64, b: f64, c: f64, x: f64) -> f64 {
     a + b * x + c * x * x
 }
 
 /// Perform piecewise quadratic interpolation at a single point
+/// 
+/// Finds the appropriate triplet of points and evaluates the fitted quadratic.
+/// 
+/// # Arguments
+/// 
+/// * `x_values` - Array of x coordinates (sorted)
+/// * `y_values` - Array of y coordinates
+/// * `x` - Point at which to evaluate
+/// 
+/// # Returns
+/// 
+/// The quadratically interpolated value at x
+/// 
+/// # Algorithm
+/// 
+/// 1. Find interval [xᵢ, xᵢ₊₁] containing x
+/// 2. Select appropriate triplet of points
+/// 3. Fit quadratic through the triplet
+/// 4. Evaluate at x
 fn quadratic_interpolate_single(x_values: &[f64], y_values: &[f64], x: f64) -> f64 {
     let n = x_values.len();
     
@@ -91,7 +216,7 @@ fn quadratic_interpolate_single(x_values: &[f64], y_values: &[f64], x: f64) -> f
     // Find the interval containing x
     for i in 0..n - 1 {
         if x >= x_values[i] && x <= x_values[i + 1] {
-            // Use three points centered around this interval
+            // Select triplet centered around this interval
             let idx = if i == 0 {
                 0 // Use points [0, 1, 2]
             } else if i == n - 2 {
@@ -113,6 +238,16 @@ fn quadratic_interpolate_single(x_values: &[f64], y_values: &[f64], x: f64) -> f
     f64::NAN
 }
 
+/// Piecewise Quadratic Interpolator
+/// 
+/// A stateful interpolator that performs piecewise quadratic interpolation
+/// using overlapping triplets of data points.
+/// 
+/// # Attributes
+/// 
+/// * `x_values` - Stored x coordinates of data points
+/// * `y_values` - Stored y coordinates of data points
+/// * `fitted` - Whether the interpolator has been fitted
 #[pyclass]
 pub struct QuadraticInterpolator {
     x_values: Vec<f64>,
@@ -122,6 +257,12 @@ pub struct QuadraticInterpolator {
 
 #[pymethods]
 impl QuadraticInterpolator {
+    /// Create a new quadratic interpolator
+    /// 
+    /// Returns
+    /// -------
+    /// QuadraticInterpolator
+    ///     A new, unfitted interpolator instance
     #[new]
     pub fn new() -> Self {
         QuadraticInterpolator {
@@ -131,7 +272,29 @@ impl QuadraticInterpolator {
         }
     }
 
-    /// Fit the interpolator with x and y data points
+    /// Fit the interpolator with data points
+    /// 
+    /// Stores the data points. Quadratic segments are computed on-demand
+    /// during evaluation.
+    /// 
+    /// Parameters
+    /// ----------
+    /// x : list of float
+    ///     X coordinates of data points (must be strictly increasing)
+    /// y : list of float
+    ///     Y coordinates of data points
+    /// 
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If x and y have different lengths
+    ///     If fewer than 3 data points are provided
+    ///     If x values are not strictly increasing
+    /// 
+    /// Notes
+    /// -----
+    /// Requires at least 3 data points to fit quadratics. For 2 points,
+    /// falls back to linear interpolation.
     pub fn fit(&mut self, x: Vec<f64>, y: Vec<f64>) -> PyResult<()> {
         if x.len() != y.len() {
             return Err(PyValueError::new_err(
@@ -144,7 +307,7 @@ impl QuadraticInterpolator {
             ));
         }
         
-        // Check if x values are sorted
+        // Check if x values are strictly increasing
         for i in 0..x.len() - 1 {
             if x[i] >= x[i + 1] {
                 return Err(PyValueError::new_err(
@@ -159,7 +322,28 @@ impl QuadraticInterpolator {
         Ok(())
     }
 
-    /// Evaluate the interpolation at a single point or multiple points
+    /// Evaluate the interpolation at one or more points
+    /// 
+    /// Parameters
+    /// ----------
+    /// x : float or list of float
+    ///     Point(s) at which to evaluate the interpolation
+    /// 
+    /// Returns
+    /// -------
+    /// float or list of float
+    ///     Quadratically interpolated value(s) at the specified point(s)
+    /// 
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the interpolator has not been fitted
+    ///     If input is neither a float nor a list of floats
+    /// 
+    /// Notes
+    /// -----
+    /// For each evaluation point, selects the nearest triplet of data points
+    /// and fits a quadratic through them.
     pub fn __call__(&self, py: Python<'_>, x: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         if !self.fitted {
             return Err(PyValueError::new_err(
@@ -187,7 +371,12 @@ impl QuadraticInterpolator {
         ))
     }
 
-    /// String representation
+    /// String representation of the interpolator
+    /// 
+    /// Returns
+    /// -------
+    /// str
+    ///     Description of the interpolator state
     pub fn __repr__(&self) -> String {
         if self.fitted {
             format!(

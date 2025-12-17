@@ -11,7 +11,16 @@ mod least_squares;
 mod rbf;
 mod chebyshev;
 
-/// Python module definition
+/// A high-performance Python interpolation library implemented in Rust.
+///
+/// Provides various interpolators like LinearInterpolator, QuadraticInterpolator,
+/// RBFInterpolator, etc.
+///
+/// Example:
+///     from interlib import LinearInterpolator
+///     interp = LinearInterpolator()
+///     interp.fit([0.0, 1.0], [0.0, 1.0])
+///     print(interp(0.5))  # 0.5
 #[pymodule]
 fn interlib(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // all interpolation classes
@@ -24,6 +33,5 @@ fn interlib(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<least_squares::LeastSquaresInterpolator>()?;
     m.add_class::<rbf::RBFInterpolator>()?;
     m.add_class::<chebyshev::ChebyshevInterpolator>()?;
-    
     Ok(())
 }
