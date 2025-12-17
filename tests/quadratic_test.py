@@ -26,7 +26,7 @@ results = quad(eval_points)
 print(f"\nMultiple evaluations: {results}")
 
 # Show representation
-print(f"\n{quad}")
+print(quad)
 
 end_time = time.perf_counter()
 

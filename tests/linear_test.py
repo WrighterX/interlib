@@ -25,9 +25,9 @@ results = linear(eval_points)
 print(f"\nMultiple evaluations: {results}")
 
 # Show representation
-print(f"\n{linear}")
+print(linear)
 
 end_time = time.perf_counter()
-
 elapsed_time = end_time - start_time
+
 print(f"Elapsed time: {elapsed_time:.4f} seconds")

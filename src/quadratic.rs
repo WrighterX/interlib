@@ -101,43 +101,32 @@ use pyo3::exceptions::PyValueError;
 /// If the points are collinear (determinant near zero), falls back to
 /// linear interpolation (c = 0).
 fn solve_quadratic_coefficients(x0: f64, y0: f64, x1: f64, y1: f64, x2: f64, y2: f64) -> (f64, f64, f64) {
-    // System of equations for quadratic a + b*x + c*x²:
-    // a + b*x0 + c*x0² = y0
-    // a + b*x1 + c*x1² = y1
-    // a + b*x2 + c*x2² = y2
-    
     let x0_sq = x0 * x0;
     let x1_sq = x1 * x1;
     let x2_sq = x2 * x2;
-    
-    // Calculate determinant of coefficient matrix
+
+    // Main Determinant (Vandermonde-like matrix)
     let det = 1.0 * (x1 * x2_sq - x2 * x1_sq)
             - x0 * (1.0 * x2_sq - 1.0 * x1_sq)
             + x0_sq * (1.0 * x2 - 1.0 * x1);
-    
-    // If determinant too small, points are nearly collinear - use linear
-    if det.abs() < 1e-10 {
+
+    if det.abs() < 1e-12 {
+        // Fallback to linear if points are nearly collinear
         let slope = (y1 - y0) / (x1 - x0);
         let intercept = y0 - slope * x0;
         return (intercept, slope, 0.0);
     }
     
-    // Compute coefficients using Cramer's rule
-    let det_a = y0 * (x1 * x2_sq - x2 * x1_sq)
-              - y1 * (x0 * x2_sq - x2 * x0_sq)
-              + y2 * (x0 * x1_sq - x1 * x0_sq);
+    // Using a cleaner expansion pattern for clarity and correctness:
+    let da = y0 * (x1 * x2_sq - x2 * x1_sq) - y1 * (x0 * x2_sq - x2 * x0_sq) + y2 * (x0 * x1_sq - x1 * x0_sq);
+    let db = 1.0 * (y1 * x2_sq - y2 * x1_sq) - 1.0 * (y0 * x2_sq - y2 * x0_sq) + 1.0 * (y0 * x1_sq - y1 * x0_sq);
     
-    let det_b = 1.0 * (y1 * x2_sq - y2 * x1_sq)
-              - x0 * (y0 * x2_sq - y2 * x0_sq)
-              + x0_sq * (y0 * x2 - y2 * x1);
-    
-    let det_c = y0 * (x1 - x2) + y1 * (x2 - x0) + y2 * (x0 - x1);
-    
-    let a = det_a / det;
-    let b = det_b / det;
-    let c = det_c / det;
-    
-    (a, b, c)
+    // CORRECTED det_c: replace 3rd column [x0^2, x1^2, x2^2] with [y0, y1, y2]
+    let dc = 1.0 * (x1 * y2 - x2 * y1) 
+           - x0 * (1.0 * y2 - 1.0 * y1) 
+           + y0 * (1.0 * x2 - 1.0 * x1);
+
+    (da / det, db / det, dc / det)
 }
 
 /// Evaluate quadratic polynomial at a point
