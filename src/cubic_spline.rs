@@ -116,26 +116,24 @@ impl SplineSegment {
 /// - More efficient than general Gaussian elimination O(n³)
 fn solve_tridiagonal(a: &[f64], b: &[f64], c: &[f64], d: &[f64]) -> Vec<f64> {
     let n = b.len();
+    if n == 0 { return vec![]; }
     let mut c_prime = vec![0.0; n];
     let mut d_prime = vec![0.0; n];
     let mut x = vec![0.0; n];
-    
-    // Forward sweep
+
     c_prime[0] = c[0] / b[0];
     d_prime[0] = d[0] / b[0];
-    
+
     for i in 1..n {
         let m = 1.0 / (b[i] - a[i] * c_prime[i - 1]);
-        c_prime[i] = c[i] * m;
+        if i < n - 1 { c_prime[i] = c[i] * m; }
         d_prime[i] = (d[i] - a[i] * d_prime[i - 1]) * m;
     }
-    
-    // Back substitution
+
     x[n - 1] = d_prime[n - 1];
     for i in (0..n - 1).rev() {
         x[i] = d_prime[i] - c_prime[i] * x[i + 1];
     }
-    
     x
 }
 
@@ -152,101 +150,59 @@ fn solve_tridiagonal(a: &[f64], b: &[f64], c: &[f64], d: &[f64]) -> Vec<f64> {
 /// # Returns
 /// 
 /// Vector of SplineSegment structs, one for each interval
-fn compute_natural_cubic_spline(x_values: &[f64], y_values: &[f64]) -> Vec<SplineSegment> {
-    let n = x_values.len();
-    
-    if n < 2 {
-        return vec![];
-    }
-    
-    // Calculate h values (interval widths)
+fn compute_not_a_knot_spline(x: &[f64], y: &[f64]) -> Vec<SplineSegment> {
+    let n = x.len();
     let mut h = vec![0.0; n - 1];
+    let mut delta = vec![0.0; n - 1];
     for i in 0..n - 1 {
-        h[i] = x_values[i + 1] - x_values[i];
+        h[i] = x[i + 1] - x[i];
+        delta[i] = (y[i + 1] - y[i]) / h[i];
     }
-    
-    // Set up tridiagonal system for second derivatives (c coefficients)
-    let mut a = vec![0.0; n];
-    let mut b = vec![0.0; n];
-    let mut c = vec![0.0; n];
-    let mut d = vec![0.0; n];
-    
-    // First row (natural boundary: c[0] = 0)
-    b[0] = 1.0;
-    c[0] = 0.0;
-    d[0] = 0.0;
-    
-    // Interior rows (continuity of second derivative)
-    for i in 1..n - 1 {
-        a[i] = h[i - 1];
-        b[i] = 2.0 * (h[i - 1] + h[i]);
-        c[i] = h[i];
-        d[i] = 3.0 * ((y_values[i + 1] - y_values[i]) / h[i] 
-                    - (y_values[i] - y_values[i - 1]) / h[i - 1]);
+
+    let mut c_coeffs = vec![0.0; n];
+    if n >= 4 {
+        let m = n - 2; 
+        let mut a_sys = vec![0.0; m];
+        let mut b_sys = vec![0.0; m];
+        let mut c_sys = vec![0.0; m];
+        let mut rhs = vec![0.0; m];
+
+        for i in 1..m-1 {
+            let k = i + 1;
+            a_sys[i] = h[k - 1];
+            b_sys[i] = 2.0 * (h[k - 1] + h[k]);
+            c_sys[i] = h[k];
+            rhs[i] = 3.0 * (delta[k] - delta[k - 1]);
+        }
+
+        // Left Not-a-Knot Boundary
+        b_sys[0] = (3.0 * h[0] * h[1] + 2.0 * h[1] * h[1] + h[0] * h[0]) / h[1];
+        c_sys[0] = (h[1] * h[1] - h[0] * h[0]) / h[1];
+        rhs[0] = 3.0 * (delta[1] - delta[0]);
+
+        // Right Not-a-Knot Boundary
+        let hn2 = h[n - 3]; let hn1 = h[n - 2];
+        a_sys[m - 1] = (hn2 * hn2 - hn1 * hn1) / hn2;
+        b_sys[m - 1] = (3.0 * hn2 * hn1 + 2.0 * hn2 * hn2 + hn1 * hn1) / hn2;
+        rhs[m - 1] = 3.0 * (delta[n - 2] - delta[n - 3]);
+
+        let inner_c = solve_tridiagonal(&a_sys, &b_sys, &c_sys, &rhs);
+        for i in 0..m { c_coeffs[i + 1] = inner_c[i]; }
+        c_coeffs[0] = ((h[0] + h[1]) * c_coeffs[1] - h[0] * c_coeffs[2]) / h[1];
+        c_coeffs[n - 1] = ((h[n-2] + h[n-3]) * c_coeffs[n - 2] - h[n-2] * c_coeffs[n - 3]) / h[n-3];
     }
-    
-    // Last row (natural boundary: c[n-1] = 0)
-    a[n - 1] = 0.0;
-    b[n - 1] = 1.0;
-    d[n - 1] = 0.0;
-    
-    // Solve for second derivatives
-    let c_coeffs = solve_tridiagonal(&a, &b, &c, &d);
-    
-    // Build spline segments from coefficients
+
     let mut segments = Vec::new();
-    
     for i in 0..n - 1 {
-        let segment = SplineSegment {
-            a: y_values[i],
-            b: (y_values[i + 1] - y_values[i]) / h[i] 
-                - h[i] * (c_coeffs[i + 1] + 2.0 * c_coeffs[i]) / 3.0,
+        segments.push(SplineSegment {
+            a: y[i],
+            b: delta[i] - h[i] * (2.0 * c_coeffs[i] + c_coeffs[i + 1]) / 3.0,
             c: c_coeffs[i],
             d: (c_coeffs[i + 1] - c_coeffs[i]) / (3.0 * h[i]),
-            x: x_values[i],
-        };
-        segments.push(segment);
+            x: x[i],
+        });
     }
-    
     segments
-}
-
-/// Evaluate cubic spline at a single point
-/// 
-/// Finds the appropriate segment and evaluates the cubic polynomial.
-/// 
-/// # Arguments
-/// 
-/// * `segments` - Pre-computed spline segments
-/// * `x_values` - X coordinates of data points
-/// * `x` - Point at which to evaluate
-/// 
-/// # Returns
-/// 
-/// The interpolated value at x
-fn cubic_spline_eval(segments: &[SplineSegment], x_values: &[f64], x: f64) -> f64 {
-    if segments.is_empty() {
-        return f64::NAN;
-    }
-    
-    let n = x_values.len();
-    
-    // Handle boundary cases (extrapolate using edge segments)
-    if x <= x_values[0] {
-        return segments[0].eval(x);
-    }
-    if x >= x_values[n - 1] {
-        return segments[segments.len() - 1].eval(x);
-    }
-    
-    // Find the segment containing x
-    for i in 0..segments.len() {
-        if x >= x_values[i] && x <= x_values[i + 1] {
-            return segments[i].eval(x);
-        }
-    }
-    
-    f64::NAN
 }
 
 /// Natural Cubic Spline Interpolator
@@ -334,7 +290,7 @@ impl CubicSplineInterpolator {
         self.y_values = y;
         
         // Compute spline coefficients
-        self.segments = compute_natural_cubic_spline(&self.x_values, &self.y_values);
+        self.segments = compute_not_a_knot_spline(&self.x_values, &self.y_values);
         
         if self.segments.is_empty() {
             return Err(PyValueError::new_err(
@@ -390,29 +346,36 @@ impl CubicSplineInterpolator {
     /// for extrapolation (linear extrapolation from the edge cubic).
     pub fn __call__(&self, py: Python<'_>, x: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         if !self.fitted {
-            return Err(PyValueError::new_err(
-                "Interpolator not fitted. Call fit(x, y) first."
-            ));
+            return Err(PyValueError::new_err("Interpolator not fitted."));
         }
 
-        // Try to extract as a single float
+        // 1. Define the evaluation logic (helper)
+        let eval_one = |val: f64| -> f64 {
+            let n = self.x_values.len();
+            if val <= self.x_values[0] { return self.segments[0].eval(val); }
+            if val >= self.x_values[n - 1] { return self.segments[n - 2].eval(val); }
+            
+            let idx = match self.x_values.binary_search_by(|v| v.partial_cmp(&val).unwrap()) {
+                Ok(i) => if i == n - 1 { i - 1 } else { i },
+                Err(i) => if i > 0 { i - 1 } else { 0 },
+            };
+            self.segments[idx].eval(val)
+        };
+
+        // 2. Apply the logic and RETURN the result to Python
+        // Handle single float input
         if let Ok(single_x) = x.extract::<f64>() {
-            let result = cubic_spline_eval(&self.segments, &self.x_values, single_x);
-            return Ok(result.into_pyobject(py)?.into_any().unbind());
+            let res = eval_one(single_x);
+            return Ok(res.into_pyobject(py)?.into_any().unbind());
         }
 
-        // Try to extract as a list of floats
+        // Handle list of floats input
         if let Ok(x_list) = x.extract::<Vec<f64>>() {
-            let results: Vec<f64> = x_list
-                .iter()
-                .map(|&xi| cubic_spline_eval(&self.segments, &self.x_values, xi))
-                .collect();
+            let results: Vec<f64> = x_list.into_iter().map(eval_one).collect();
             return Ok(results.into_pyobject(py)?.into_any().unbind());
         }
 
-        Err(PyValueError::new_err(
-            "Input must be a float or a list of floats"
-        ))
+        Err(PyValueError::new_err("Input must be float or list of floats"))
     }
 
     /// String representation of the interpolator
