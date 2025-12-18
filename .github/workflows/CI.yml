@@ -53,10 +53,6 @@ jobs:
         with:
           name: wheels-linux-${{ matrix.platform.target }}
           path: dist
-          env:
-        LC_ALL: C.UTF-8
-        LANG: C.UTF-8
-        PYTHONIOENCODING: utf-8
 
   musllinux:
     runs-on: ${{ matrix.platform.runner }}
