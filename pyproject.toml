@@ -21,3 +21,4 @@ dependencies = [
 
 [tool.maturin]
 python-source = "python"
+features = ["extension-module"]
