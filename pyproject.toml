@@ -20,6 +20,4 @@ dependencies = [
 ]
 
 [tool.maturin]
-features = ["pyo3/extension-module"]
-python-source = "."
-module-name = "interlib.interlib" # Points to the binary inside the package
+python-source = "python"
