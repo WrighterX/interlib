@@ -18,7 +18,3 @@ dependencies = [
     "scipy",
     "maturin",
 ]
-
-[tool.maturin]
-python-source = "python"
-features = ["extension-module"]
