@@ -130,6 +130,7 @@
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
+use pyo3_stub_gen::{derive::gen_stub_pymethods, derive::gen_stub_pyclass, define_stub_info_gatherer};
 
 /// RBF kernel types with their evaluation functions
 #[derive(Clone, Copy, Debug)]
@@ -310,6 +311,7 @@ fn rbf_evaluate(
 /// * `kernel` - Selected RBF kernel
 /// * `epsilon` - Shape parameter
 /// * `fitted` - Whether weights have been computed
+#[gen_stub_pyclass]
 #[pyclass]
 pub struct RBFInterpolator {
     x_values: Vec<f64>,
@@ -320,6 +322,7 @@ pub struct RBFInterpolator {
     fitted: bool,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl RBFInterpolator {
     /// Create a new RBF interpolator
@@ -510,3 +513,4 @@ impl RBFInterpolator {
         }
     }
 }
+define_stub_info_gatherer!(stub_info);

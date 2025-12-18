@@ -155,6 +155,7 @@
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
 use std::f64::consts::PI;
+use pyo3_stub_gen::{derive::gen_stub_pymethods, derive::gen_stub_pyclass, define_stub_info_gatherer};
 
 /// Generate Chebyshev nodes of the first kind on interval [a, b]
 /// 
@@ -329,6 +330,7 @@ fn chebyshev_evaluate_direct(coefficients: &[f64], x_std: f64) -> f64 {
 /// * `n_points` - Number of interpolation points
 /// * `use_clenshaw` - Whether to use Clenshaw algorithm
 /// * `fitted` - Whether coefficients have been computed
+#[gen_stub_pyclass]
 #[pyclass]
 pub struct ChebyshevInterpolator {
     x_min: f64,
@@ -341,6 +343,7 @@ pub struct ChebyshevInterpolator {
     fitted: bool,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl ChebyshevInterpolator {
     /// Create a new Chebyshev interpolator
@@ -579,3 +582,4 @@ impl ChebyshevInterpolator {
         }
     }
 }
+define_stub_info_gatherer!(stub_info);

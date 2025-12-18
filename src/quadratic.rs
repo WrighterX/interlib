@@ -80,6 +80,7 @@
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
+use pyo3_stub_gen::{derive::gen_stub_pymethods, derive::gen_stub_pyclass, define_stub_info_gatherer};
 
 /// Solve 3×3 system for quadratic coefficients using Cramer's rule
 /// 
@@ -237,6 +238,7 @@ fn quadratic_interpolate_single(x_values: &[f64], y_values: &[f64], x: f64) -> f
 /// * `x_values` - Stored x coordinates of data points
 /// * `y_values` - Stored y coordinates of data points
 /// * `fitted` - Whether the interpolator has been fitted
+#[gen_stub_pyclass]
 #[pyclass]
 pub struct QuadraticInterpolator {
     x_values: Vec<f64>,
@@ -244,6 +246,7 @@ pub struct QuadraticInterpolator {
     fitted: bool,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl QuadraticInterpolator {
     /// Create a new quadratic interpolator
@@ -379,3 +382,4 @@ impl QuadraticInterpolator {
         }
     }
 }
+define_stub_info_gatherer!(stub_info);

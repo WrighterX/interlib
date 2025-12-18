@@ -61,6 +61,7 @@
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
+use pyo3_stub_gen::{derive::gen_stub_pymethods, derive::gen_stub_pyclass, define_stub_info_gatherer};
 
 /// Cubic spline segment representation
 /// 
@@ -216,6 +217,7 @@ fn compute_not_a_knot_spline(x: &[f64], y: &[f64]) -> Vec<SplineSegment> {
 /// * `y_values` - Stored y coordinates of data points
 /// * `segments` - Pre-computed cubic polynomial segments
 /// * `fitted` - Whether the interpolator has been fitted
+#[gen_stub_pyclass]
 #[pyclass]
 pub struct CubicSplineInterpolator {
     x_values: Vec<f64>,
@@ -224,6 +226,7 @@ pub struct CubicSplineInterpolator {
     fitted: bool,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl CubicSplineInterpolator {
     /// Create a new cubic spline interpolator
@@ -398,3 +401,4 @@ impl CubicSplineInterpolator {
         }
     }
 }
+define_stub_info_gatherer!(stub_info);

@@ -23,6 +23,7 @@ mod chebyshev;
 ///     interp.fit([0.0, 1.0], [0.0, 1.0])
 ///     print(interp(0.5))  # 0.5
 #[pymodule]
+#[pyo3(name = "interlib")]
 fn interlib(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // all interpolation classes
     m.add_class::<lagrange::LagrangeInterpolator>()?;
