@@ -6,6 +6,7 @@ build-backend = "maturin"
 name = "interlib"
 requires-python = ">=3.8"
 classifiers = [
+    "Typing :: Typed",
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
@@ -17,3 +18,8 @@ dependencies = [
     "scipy",
     "maturin",
 ]
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+python-source = "."
+module-name = "interlib.interlib" # Points to the binary inside the package

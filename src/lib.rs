@@ -1,4 +1,5 @@
 use pyo3::prelude::*;
+use pyo3_stub_gen::{define_stub_info_gatherer};
 
 // Module declarations
 mod lagrange;
@@ -35,3 +36,5 @@ fn interlib(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<chebyshev::ChebyshevInterpolator>()?;
     Ok(())
 }
+
+define_stub_info_gatherer!(stub_info);
