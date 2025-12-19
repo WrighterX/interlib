@@ -48,7 +48,6 @@
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
-use pyo3_stub_gen::{derive::gen_stub_pymethods, derive::gen_stub_pyclass, define_stub_info_gatherer};
 
 /// Core Lagrange interpolation function
 /// 
@@ -90,14 +89,12 @@ fn lagrange_interpolation(x_values: &[f64], y_values: &[f64], x: f64) -> f64 {
 /// * `x_values` - Stored x coordinates of fitted data points
 /// * `y_values` - Stored y coordinates of fitted data points
 /// * `fitted` - Whether the interpolator has been fitted with data
-#[gen_stub_pyclass]
 #[pyclass]
 pub struct LagrangeInterpolator {
     x_values: Vec<f64>,
     y_values: Vec<f64>,
     fitted: bool,
 }
-#[gen_stub_pymethods]
 #[pymethods]
 impl LagrangeInterpolator {
     /// Create a new Lagrange interpolator
@@ -224,4 +221,3 @@ impl LagrangeInterpolator {
         }
     }
 }
-define_stub_info_gatherer!(stub_info);

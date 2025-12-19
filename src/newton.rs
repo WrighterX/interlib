@@ -58,7 +58,6 @@
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
-use pyo3_stub_gen::{derive::gen_stub_pymethods, derive::gen_stub_pyclass, define_stub_info_gatherer};
 
 /// Compute divided differences table
 /// 
@@ -119,7 +118,6 @@ fn newton_evaluate(xs: &[f64], coef: &[f64], x: f64) -> f64 {
 /// * `y_values` - Stored y coordinates of data points
 /// * `coefficients` - Pre-computed divided difference coefficients
 /// * `fitted` - Whether the interpolator has been fitted
-#[gen_stub_pyclass]
 #[pyclass]
 pub struct NewtonInterpolator {
     x_values: Vec<f64>,
@@ -128,7 +126,6 @@ pub struct NewtonInterpolator {
     fitted: bool,
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl NewtonInterpolator {
     /// Create a new Newton interpolator
@@ -277,5 +274,3 @@ impl NewtonInterpolator {
         }
     }
 }
-
-define_stub_info_gatherer!(stub_info);

@@ -84,7 +84,6 @@
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
-use pyo3_stub_gen::{derive::gen_stub_pymethods, derive::gen_stub_pyclass, define_stub_info_gatherer};
 
 /// Solve linear system using Gaussian elimination with partial pivoting
 /// 
@@ -237,7 +236,6 @@ fn evaluate_polynomial(coefficients: &[f64], x: f64) -> f64 {
 /// * `coefficients` - Computed polynomial coefficients
 /// * `degree` - Degree of the polynomial
 /// * `fitted` - Whether the approximator has been fitted
-#[gen_stub_pyclass]
 #[pyclass]
 pub struct LeastSquaresInterpolator {
     x_values: Vec<f64>,
@@ -247,7 +245,6 @@ pub struct LeastSquaresInterpolator {
     fitted: bool,
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl LeastSquaresInterpolator {
     /// Create a new least squares approximator
@@ -496,4 +493,3 @@ impl LeastSquaresInterpolator {
         }
     }
 }
-define_stub_info_gatherer!(stub_info);

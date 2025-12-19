@@ -92,7 +92,6 @@
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
-use pyo3_stub_gen::{derive::gen_stub_pymethods, derive::gen_stub_pyclass, define_stub_info_gatherer};
 
 /// Compute Hermite divided differences
 /// 
@@ -205,7 +204,6 @@ fn hermite_evaluate(z: &[f64], coefficients: &[f64], x: f64) -> f64 {
 /// * `z_values` - Doubled x values for divided differences
 /// * `coefficients` - Pre-computed Hermite coefficients
 /// * `fitted` - Whether the interpolator has been fitted
-#[gen_stub_pyclass]
 #[pyclass]
 pub struct HermiteInterpolator {
     x_values: Vec<f64>,
@@ -216,7 +214,6 @@ pub struct HermiteInterpolator {
     fitted: bool,
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl HermiteInterpolator {
     /// Create a new Hermite interpolator
@@ -397,4 +394,3 @@ impl HermiteInterpolator {
         }
     }
 }
-define_stub_info_gatherer!(stub_info);
