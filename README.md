@@ -8,7 +8,7 @@ All of the library's built-in functions work out of the box, so the only thing y
 
 Go to the directory where you have downloaded the wheel file, and use `pip install interlib-0.1.0-cp312-cp312-win_amd64.whl`.
 
-Congrats, you installed interlib into your system!
+Congrats, you have installed interlib into your system!
 
 Now, there are several use cases for it:
 
