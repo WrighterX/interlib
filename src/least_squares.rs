@@ -84,6 +84,8 @@
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
+use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1, ToPyArray};
+use rayon::prelude::*;
 
 /// Solve linear system using Gaussian elimination with partial pivoting
 /// 
@@ -287,42 +289,73 @@ impl LeastSquaresInterpolator {
     /// 
     /// Parameters
     /// ----------
-    /// x : list of float
+    /// x : list of float or numpy.ndarray
     ///     X coordinates of data points
-    /// y : list of float
+    /// y : list of float or numpy.ndarray
     ///     Y coordinates of data points
-    /// 
+    ///
     /// Raises
     /// ------
     /// ValueError
     ///     If x and y have different lengths
     ///     If fewer than degree+1 points are provided
     ///     If fitting fails (singular matrix)
-    /// 
+    ///
     /// Notes
     /// -----
     /// Requires at least degree+1 data points. More points improve stability
     /// and allow the method to smooth noise effectively.
-    pub fn fit(&mut self, x: Vec<f64>, y: Vec<f64>) -> PyResult<()> {
-        if x.len() != y.len() {
+    pub fn fit(&mut self, x: Bound<'_, PyAny>, y: Bound<'_, PyAny>) -> PyResult<()> {
+        // Try to extract x as numpy array first (zero-copy read), then as Vec
+        let x_vec: Vec<f64> = if let Ok(arr) = x.downcast::<numpy::PyArray1<f64>>() {
+            arr.readonly().as_slice()?.to_vec()
+        } else if let Ok(vec) = x.extract::<Vec<f64>>() {
+            vec
+        } else {
+            return Err(PyValueError::new_err(
+                "x must be a numpy array or list of floats"
+            ));
+        };
+
+        // Try to extract y as numpy array first (zero-copy read), then as Vec
+        let y_vec: Vec<f64> = if let Ok(arr) = y.downcast::<numpy::PyArray1<f64>>() {
+            arr.readonly().as_slice()?.to_vec()
+        } else if let Ok(vec) = y.extract::<Vec<f64>>() {
+            vec
+        } else {
+            return Err(PyValueError::new_err(
+                "y must be a numpy array or list of floats"
+            ));
+        };
+
+        // Check for sorted values and duplicates
+        for i in 1..x_vec.len() {
+            if x_vec[i] <= x_vec[i - 1] {
+                return Err(PyValueError::new_err(
+                    "x values must be strictly increasing (sorted and no duplicates)"
+                ));
+            }
+        }
+
+        if x_vec.len() != y_vec.len() {
             return Err(PyValueError::new_err(
                 "x and y must have the same length"
             ));
         }
-        if x.is_empty() {
+        if x_vec.is_empty() {
             return Err(PyValueError::new_err(
                 "x and y cannot be empty"
             ));
         }
-        if x.len() <= self.degree {
+        if x_vec.len() <= self.degree {
             return Err(PyValueError::new_err(
-                format!("Need at least {} data points for degree {} polynomial", 
+                format!("Need at least {} data points for degree {} polynomial",
                         self.degree + 1, self.degree)
             ));
         }
-        
-        self.x_values = x;
-        self.y_values = y;
+
+        self.x_values = x_vec;
+        self.y_values = y_vec;
         
         // Compute least squares coefficients
         match least_squares_polynomial(&self.x_values, &self.y_values, self.degree) {
@@ -426,23 +459,23 @@ impl LeastSquaresInterpolator {
     }
 
     /// Evaluate the polynomial at one or more points
-    /// 
+    ///
     /// Parameters
     /// ----------
-    /// x : float or list of float
+    /// x : float, list of float, or numpy.ndarray
     ///     Point(s) at which to evaluate
-    /// 
+    ///
     /// Returns
     /// -------
-    /// float or list of float
+    /// float or numpy.ndarray
     ///     Approximated value(s) at the specified point(s)
-    /// 
+    ///
     /// Raises
     /// ------
     /// ValueError
     ///     If the approximator has not been fitted
     ///     If input is neither a float nor a list of floats
-    /// 
+    ///
     /// Notes
     /// -----
     /// Can safely extrapolate, but extrapolation quality depends on
@@ -460,13 +493,26 @@ impl LeastSquaresInterpolator {
             return Ok(result.into_pyobject(py)?.into_any().unbind());
         }
 
-        // Try to extract as a list of floats
-        if let Ok(x_list) = x.extract::<Vec<f64>>() {
-            let results: Vec<f64> = x_list
-                .iter()
+        // Handle numpy array with parallel evaluation
+        if let Ok(arr) = x.downcast::<numpy::PyArray1<f64>>() {
+            let x_slice = arr.readonly();
+            let x_data = x_slice.as_slice()?;
+
+            let results: Vec<f64> = x_data
+                .par_iter()
                 .map(|&xi| evaluate_polynomial(&self.coefficients, xi))
                 .collect();
-            return Ok(results.into_pyobject(py)?.into_any().unbind());
+
+            return Ok(results.to_pyarray(py).into_any().unbind());
+        }
+
+        // Handle list of floats with parallel evaluation
+        if let Ok(x_list) = x.extract::<Vec<f64>>() {
+            let results: Vec<f64> = x_list
+                .par_iter()
+                .map(|&xi| evaluate_polynomial(&self.coefficients, xi))
+                .collect();
+            return Ok(results.to_pyarray(py).into_any().unbind());
         }
 
         Err(PyValueError::new_err(

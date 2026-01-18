@@ -92,6 +92,8 @@
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
+use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1, ToPyArray};
+use rayon::prelude::*;
 
 /// Compute Hermite divided differences
 /// 
@@ -241,24 +243,24 @@ impl HermiteInterpolator {
     /// 
     /// Parameters
     /// ----------
-    /// x : list of float
+    /// x : list of float or numpy.ndarray
     ///     X coordinates of data points
-    /// y : list of float
+    /// y : list of float or numpy.ndarray
     ///     Y coordinates (function values) at data points
-    /// dy : list of float
+    /// dy : list of float or numpy.ndarray
     ///     Derivatives (dy/dx) at data points
-    /// 
+    ///
     /// Raises
     /// ------
     /// ValueError
     ///     If x, y, and dy don't all have the same length
     ///     If any of the arrays is empty
-    /// 
+    ///
     /// Notes
     /// -----
     /// The quality of interpolation depends on the accuracy of the derivative
     /// values. Inaccurate derivatives can lead to poor interpolation results.
-    /// 
+    ///
     /// Examples
     /// --------
     /// >>> import math
@@ -267,21 +269,63 @@ impl HermiteInterpolator {
     /// >>> y = [0.0, 1.0, 8.0]  # x³
     /// >>> dy = [0.0, 3.0, 12.0]  # 3x²
     /// >>> interp.fit(x, y, dy)
-    pub fn fit(&mut self, x: Vec<f64>, y: Vec<f64>, dy: Vec<f64>) -> PyResult<()> {
-        if x.len() != y.len() || x.len() != dy.len() {
+    pub fn fit(&mut self, x: Bound<'_, PyAny>, y: Bound<'_, PyAny>, dy: Bound<'_, PyAny>) -> PyResult<()> {
+        // Try to extract x as numpy array first (zero-copy read), then as Vec
+        let x_vec: Vec<f64> = if let Ok(arr) = x.downcast::<numpy::PyArray1<f64>>() {
+            arr.readonly().as_slice()?.to_vec()
+        } else if let Ok(vec) = x.extract::<Vec<f64>>() {
+            vec
+        } else {
+            return Err(PyValueError::new_err(
+                "x must be a numpy array or list of floats"
+            ));
+        };
+
+        // Try to extract y as numpy array first (zero-copy read), then as Vec
+        let y_vec: Vec<f64> = if let Ok(arr) = y.downcast::<numpy::PyArray1<f64>>() {
+            arr.readonly().as_slice()?.to_vec()
+        } else if let Ok(vec) = y.extract::<Vec<f64>>() {
+            vec
+        } else {
+            return Err(PyValueError::new_err(
+                "y must be a numpy array or list of floats"
+            ));
+        };
+
+        // Try to extract dy as numpy array first (zero-copy read), then as Vec
+        let dy_vec: Vec<f64> = if let Ok(arr) = dy.downcast::<numpy::PyArray1<f64>>() {
+            arr.readonly().as_slice()?.to_vec()
+        } else if let Ok(vec) = dy.extract::<Vec<f64>>() {
+            vec
+        } else {
+            return Err(PyValueError::new_err(
+                "dy must be a numpy array or list of floats"
+            ));
+        };
+
+        // Check for sorted values and duplicates
+        for i in 1..x_vec.len() {
+            if x_vec[i] <= x_vec[i - 1] {
+                return Err(PyValueError::new_err(
+                    "x values must be strictly increasing (sorted and no duplicates)"
+                ));
+            }
+        }
+
+        if x_vec.len() != y_vec.len() || x_vec.len() != dy_vec.len() {
             return Err(PyValueError::new_err(
                 "x, y, and dy must all have the same length"
             ));
         }
-        if x.is_empty() {
+        if x_vec.is_empty() {
             return Err(PyValueError::new_err(
                 "x, y, and dy cannot be empty"
             ));
         }
-        
-        self.x_values = x;
-        self.y_values = y;
-        self.dy_values = dy;
+
+        self.x_values = x_vec;
+        self.y_values = y_vec;
+        self.dy_values = dy_vec;
         
         // Compute Hermite coefficients
         let (z, coef) = hermite_divided_differences(
@@ -326,25 +370,25 @@ impl HermiteInterpolator {
     }
 
     /// Evaluate the interpolation at one or more points
-    /// 
+    ///
     /// Uses Horner's method for efficient and stable evaluation.
-    /// 
+    ///
     /// Parameters
     /// ----------
-    /// x : float or list of float
+    /// x : float, list of float, or numpy.ndarray
     ///     Point(s) at which to evaluate the interpolation
-    /// 
+    ///
     /// Returns
     /// -------
-    /// float or list of float
+    /// float or numpy.ndarray
     ///     Hermite interpolated value(s) at the specified point(s)
-    /// 
+    ///
     /// Raises
     /// ------
     /// ValueError
     ///     If the interpolator has not been fitted
     ///     If input is neither a float nor a list of floats
-    /// 
+    ///
     /// Notes
     /// -----
     /// The Hermite polynomial passes through all data points and has the
@@ -363,13 +407,26 @@ impl HermiteInterpolator {
             return Ok(result.into_pyobject(py)?.into_any().unbind());
         }
 
-        // Try to extract as a list of floats
-        if let Ok(x_list) = x.extract::<Vec<f64>>() {
-            let results: Vec<f64> = x_list
-                .iter()
+        // Handle numpy array with parallel evaluation
+        if let Ok(arr) = x.downcast::<numpy::PyArray1<f64>>() {
+            let x_slice = arr.readonly();
+            let x_data = x_slice.as_slice()?;
+
+            let results: Vec<f64> = x_data
+                .par_iter()
                 .map(|&xi| hermite_evaluate(&self.z_values, &self.coefficients, xi))
                 .collect();
-            return Ok(results.into_pyobject(py)?.into_any().unbind());
+
+            return Ok(results.to_pyarray(py).into_any().unbind());
+        }
+
+        // Handle list of floats with parallel evaluation
+        if let Ok(x_list) = x.extract::<Vec<f64>>() {
+            let results: Vec<f64> = x_list
+                .par_iter()
+                .map(|&xi| hermite_evaluate(&self.z_values, &self.coefficients, xi))
+                .collect();
+            return Ok(results.to_pyarray(py).into_any().unbind());
         }
 
         Err(PyValueError::new_err(

@@ -130,6 +130,8 @@
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
+use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1, ToPyArray};
+use rayon::prelude::*;
 
 /// RBF kernel types with their evaluation functions
 #[derive(Clone, Copy, Debug)]
@@ -377,41 +379,74 @@ impl RBFInterpolator {
     }
 
     /// Fit the RBF interpolator
-    /// 
+    ///
     /// Computes interpolation weights by solving the RBF system Φw = y.
-    /// 
+    ///
     /// Parameters
     /// ----------
-    /// x : list of float
+    /// x : numpy.ndarray or list of float
     ///     X coordinates of data points
-    /// y : list of float
+    /// y : numpy.ndarray or list of float
     ///     Y coordinates of data points
-    /// 
+    ///
     /// Raises
     /// ------
     /// ValueError
     ///     If x and y have different lengths or are empty
     ///     If weight computation fails (singular matrix)
-    /// 
+    ///     If x values are not sorted or contain duplicates
+    ///
     /// Notes
     /// -----
     /// Complexity is O(n³) due to solving the linear system.
     /// For large datasets (n > 1000), consider other methods.
-    pub fn fit(&mut self, x: Vec<f64>, y: Vec<f64>) -> PyResult<()> {
-        if x.len() != y.len() {
+    pub fn fit(&mut self, x: Bound<'_, PyAny>, y: Bound<'_, PyAny>) -> PyResult<()> {
+        // Try to extract x as numpy array first (zero-copy read), then as Vec
+        let x_vec: Vec<f64> = if let Ok(arr) = x.downcast::<numpy::PyArray1<f64>>() {
+            arr.readonly().as_slice()?.to_vec()
+        } else if let Ok(vec) = x.extract::<Vec<f64>>() {
+            vec
+        } else {
+            return Err(PyValueError::new_err(
+                "x must be a numpy array or list of floats"
+            ));
+        };
+
+        // Try to extract y as numpy array first (zero-copy read), then as Vec
+        let y_vec: Vec<f64> = if let Ok(arr) = y.downcast::<numpy::PyArray1<f64>>() {
+            arr.readonly().as_slice()?.to_vec()
+        } else if let Ok(vec) = y.extract::<Vec<f64>>() {
+            vec
+        } else {
+            return Err(PyValueError::new_err(
+                "y must be a numpy array or list of floats"
+            ));
+        };
+
+        // Validation
+        if x_vec.len() != y_vec.len() {
             return Err(PyValueError::new_err(
                 "x and y must have the same length"
             ));
         }
-        if x.is_empty() {
+        if x_vec.is_empty() {
             return Err(PyValueError::new_err(
                 "x and y cannot be empty"
             ));
         }
-        
-        self.x_values = x;
-        self.y_values = y;
-        
+
+        // Check for sorted values and duplicates
+        for i in 1..x_vec.len() {
+            if x_vec[i] <= x_vec[i - 1] {
+                return Err(PyValueError::new_err(
+                    "x values must be strictly increasing (sorted and no duplicates)"
+                ));
+            }
+        }
+
+        self.x_values = x_vec;
+        self.y_values = y_vec;
+
         // Compute RBF weights
         match compute_rbf_weights(&self.x_values, &self.y_values, self.kernel, self.epsilon) {
             Ok(weights) => {
@@ -444,17 +479,18 @@ impl RBFInterpolator {
     }
 
     /// Evaluate the interpolation at one or more points
-    /// 
+    ///
     /// Parameters
     /// ----------
-    /// x : float or list of float
+    /// x : float, numpy.ndarray, or list of float
     ///     Point(s) at which to evaluate
-    /// 
+    ///
     /// Returns
     /// -------
-    /// float or list of float
+    /// float or numpy.ndarray
     ///     Interpolated value(s)
-    /// 
+    ///     Returns numpy array if input is numpy array or list
+    ///
     /// Raises
     /// ------
     /// ValueError
@@ -466,21 +502,36 @@ impl RBFInterpolator {
             ));
         }
 
+        // Single float
         if let Ok(single_x) = x.extract::<f64>() {
             let result = rbf_evaluate(&self.x_values, &self.weights, self.kernel, self.epsilon, single_x);
             return Ok(result.into_pyobject(py)?.into_any().unbind());
         }
 
-        if let Ok(x_list) = x.extract::<Vec<f64>>() {
-            let results: Vec<f64> = x_list
-                .iter()
+        // NumPy array with parallel evaluation
+        if let Ok(arr) = x.downcast::<numpy::PyArray1<f64>>() {
+            let x_slice = arr.readonly();
+            let x_data = x_slice.as_slice()?;
+
+            let results: Vec<f64> = x_data
+                .par_iter()
                 .map(|&xi| rbf_evaluate(&self.x_values, &self.weights, self.kernel, self.epsilon, xi))
                 .collect();
-            return Ok(results.into_pyobject(py)?.into_any().unbind());
+
+            return Ok(results.to_pyarray(py).into_any().unbind());
+        }
+
+        // List of floats with parallel evaluation
+        if let Ok(x_list) = x.extract::<Vec<f64>>() {
+            let results: Vec<f64> = x_list
+                .par_iter()
+                .map(|&xi| rbf_evaluate(&self.x_values, &self.weights, self.kernel, self.epsilon, xi))
+                .collect();
+            return Ok(results.to_pyarray(py).into_any().unbind());
         }
 
         Err(PyValueError::new_err(
-            "Input must be a float or a list of floats"
+            "Input must be a float, numpy array, or a list of floats"
         ))
     }
 
