@@ -61,8 +61,6 @@
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
-use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1, ToPyArray};
-use rayon::prelude::*;
 
 /// Cubic spline segment representation
 /// 
@@ -245,82 +243,61 @@ impl CubicSplineInterpolator {
     }
 
     /// Fit the interpolator with data points
-    ///
-    /// Computes the not-a-knot cubic spline segments.
-    ///
+    /// 
+    /// Computes the natural cubic spline segments. Natural boundary conditions
+    /// are used: second derivative equals zero at both endpoints.
+    /// 
     /// Parameters
     /// ----------
-    /// x : numpy.ndarray or list of float
+    /// x : list of float
     ///     X coordinates of data points (must be strictly increasing)
-    /// y : numpy.ndarray or list of float
+    /// y : list of float
     ///     Y coordinates of data points
-    ///
+    /// 
     /// Raises
     /// ------
     /// ValueError
     ///     If x and y have different lengths
     ///     If fewer than 2 data points are provided
     ///     If x values are not strictly increasing
-    ///
+    /// 
     /// Notes
     /// -----
     /// The spline segments are computed using the Thomas algorithm to solve
     /// the tridiagonal system for second derivatives, which is O(n) efficient.
-    pub fn fit(&mut self, x: Bound<'_, PyAny>, y: Bound<'_, PyAny>) -> PyResult<()> {
-        // Try to extract x as numpy array first (zero-copy read), then as Vec
-        let x_vec: Vec<f64> = if let Ok(arr) = x.downcast::<numpy::PyArray1<f64>>() {
-            arr.readonly().as_slice()?.to_vec()
-        } else if let Ok(vec) = x.extract::<Vec<f64>>() {
-            vec
-        } else {
-            return Err(PyValueError::new_err(
-                "x must be a numpy array or list of floats"
-            ));
-        };
-
-        // Try to extract y as numpy array first (zero-copy read), then as Vec
-        let y_vec: Vec<f64> = if let Ok(arr) = y.downcast::<numpy::PyArray1<f64>>() {
-            arr.readonly().as_slice()?.to_vec()
-        } else if let Ok(vec) = y.extract::<Vec<f64>>() {
-            vec
-        } else {
-            return Err(PyValueError::new_err(
-                "y must be a numpy array or list of floats"
-            ));
-        };
-
-        if x_vec.len() != y_vec.len() {
+    pub fn fit(&mut self, x: Vec<f64>, y: Vec<f64>) -> PyResult<()> {
+        if x.len() != y.len() {
             return Err(PyValueError::new_err(
                 "x and y must have the same length"
             ));
         }
-        if x_vec.len() < 2 {
+        if x.len() < 2 {
             return Err(PyValueError::new_err(
                 "Cubic spline interpolation requires at least 2 data points"
             ));
         }
-
-        // Check if x values are sorted and no duplicates
-        for i in 1..x_vec.len() {
-            if x_vec[i] <= x_vec[i - 1] {
+        
+        // Check if x values are sorted
+        for i in 0..x.len() - 1 {
+            if x[i] >= x[i + 1] {
                 return Err(PyValueError::new_err(
-                    "x values must be strictly increasing (sorted and no duplicates)"
+                    "x values must be strictly increasing"
                 ));
             }
         }
-
-        self.x_values = x_vec;
-        self.y_values = y_vec;
-
+        
+        self.x_values = x;
+        self.y_values = y;
+        
         // Compute spline coefficients
         self.segments = compute_not_a_knot_spline(&self.x_values, &self.y_values);
-
+        
         if self.segments.is_empty() {
             return Err(PyValueError::new_err(
                 "Failed to compute spline coefficients"
             ));
         }
-
+        
         self.fitted = true;
         Ok(())
     }
@@ -346,24 +323,23 @@ impl CubicSplineInterpolator {
     }
 
     /// Evaluate the interpolation at one or more points
-    ///
+    /// 
     /// Parameters
     /// ----------
-    /// x : float, numpy.ndarray, or list of float
+    /// x : float or list of float
     ///     Point(s) at which to evaluate the interpolation
-    ///
+    /// 
     /// Returns
     /// -------
-    /// float or numpy.ndarray
+    /// float or list of float
     ///     Interpolated value(s) at the specified point(s)
-    ///     Returns numpy array if input is numpy array or list
-    ///
+    /// 
     /// Raises
     /// ------
     /// ValueError
     ///     If the interpolator has not been fitted
-    ///     If input is neither a float, numpy array, nor a list of floats
-    ///
+    ///     If input is neither a float nor a list of floats
+    /// 
     /// Notes
     /// -----
     /// For points outside the data range, the edge segments are used
@@ -373,12 +349,12 @@ impl CubicSplineInterpolator {
             return Err(PyValueError::new_err("Interpolator not fitted."));
         }
 
-        // Define the evaluation logic (helper)
+        // 1. Define the evaluation logic (helper)
         let eval_one = |val: f64| -> f64 {
             let n = self.x_values.len();
             if val <= self.x_values[0] { return self.segments[0].eval(val); }
             if val >= self.x_values[n - 1] { return self.segments[n - 2].eval(val); }
-
+            
             let idx = match self.x_values.binary_search_by(|v| v.partial_cmp(&val).unwrap()) {
                 Ok(i) => if i == n - 1 { i - 1 } else { i },
                 Err(i) => if i > 0 { i - 1 } else { 0 },
@@ -386,35 +362,20 @@ impl CubicSplineInterpolator {
             self.segments[idx].eval(val)
         };
 
+        // 2. Apply the logic and RETURN the result to Python
         // Handle single float input
         if let Ok(single_x) = x.extract::<f64>() {
             let res = eval_one(single_x);
             return Ok(res.into_pyobject(py)?.into_any().unbind());
         }
 
-        // Handle numpy array with parallel evaluation
-        if let Ok(arr) = x.downcast::<numpy::PyArray1<f64>>() {
-            let x_slice = arr.readonly();
-            let x_data = x_slice.as_slice()?;
-
-            let results: Vec<f64> = x_data
-                .par_iter()
-                .map(|&val| eval_one(val))
-                .collect();
-
-            return Ok(results.to_pyarray(py).into_any().unbind());
-        }
-
-        // Handle list of floats with parallel evaluation
+        // Handle list of floats input
         if let Ok(x_list) = x.extract::<Vec<f64>>() {
-            let results: Vec<f64> = x_list
-                .par_iter()
-                .map(|&val| eval_one(val))
-                .collect();
-            return Ok(results.to_pyarray(py).into_any().unbind());
+            let results: Vec<f64> = x_list.into_iter().map(eval_one).collect();
+            return Ok(results.into_pyobject(py)?.into_any().unbind());
         }
 
-        Err(PyValueError::new_err("Input must be float, numpy array, or list of floats"))
+        Err(PyValueError::new_err("Input must be float or list of floats"))
     }
 
     /// String representation of the interpolator

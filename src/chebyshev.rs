@@ -155,8 +155,6 @@
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
 use std::f64::consts::PI;
-use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1, ToPyArray};
-use rayon::prelude::*;
 
 /// Generate Chebyshev nodes of the first kind on interval [a, b]
 /// 
@@ -408,76 +406,54 @@ impl ChebyshevInterpolator {
     }
 
     /// Fit with function values at Chebyshev nodes
-    ///
+    /// 
     /// Parameters
     /// ----------
-    /// y : list of float or numpy.ndarray
+    /// y : list of float
     ///     Function values at the Chebyshev nodes
-    ///
+    /// 
     /// Raises
     /// ------
     /// ValueError
     ///     If y length doesn't match number of nodes
-    pub fn fit(&mut self, y: Bound<'_, PyAny>) -> PyResult<()> {
-        // Try to extract y as numpy array first (zero-copy read), then as Vec
-        let y_vec: Vec<f64> = if let Ok(arr) = y.downcast::<numpy::PyArray1<f64>>() {
-            arr.readonly().as_slice()?.to_vec()
-        } else if let Ok(vec) = y.extract::<Vec<f64>>() {
-            vec
-        } else {
+    pub fn fit(&mut self, y: Vec<f64>) -> PyResult<()> {
+        if y.len() != self.n_points {
             return Err(PyValueError::new_err(
-                "y must be a numpy array or list of floats"
-            ));
-        };
-
-        if y_vec.len() != self.n_points {
-            return Err(PyValueError::new_err(
-                format!("Expected {} y values (one for each Chebyshev node), got {}",
-                        self.n_points, y_vec.len())
+                format!("Expected {} y values (one for each Chebyshev node), got {}", 
+                        self.n_points, y.len())
             ));
         }
-
-        self.y_values = y_vec;
+        
+        self.y_values = y;
         self.coefficients = compute_chebyshev_coefficients(&self.y_values);
         self.fitted = true;
         Ok(())
     }
 
     /// Fit using a Python function
-    ///
+    /// 
     /// Convenience method that evaluates the function at Chebyshev nodes
     /// automatically.
-    ///
+    /// 
     /// Parameters
     /// ----------
     /// func : callable
     ///     Python function to interpolate
-    ///
+    /// 
     /// Raises
     /// ------
     /// ValueError
     ///     If function call fails
     pub fn fit_function(&mut self, py: Python<'_>, func: Py<PyAny>) -> PyResult<()> {
         let mut y_values = Vec::with_capacity(self.n_points);
-
+        
         for &x in &self.nodes {
             let result = func.call1(py, (x,))?;
             let y: f64 = result.extract(py)?;
             y_values.push(y);
         }
-
-        // Directly set values since we already have a Vec
-        if y_values.len() != self.n_points {
-            return Err(PyValueError::new_err(
-                format!("Expected {} y values (one for each Chebyshev node), got {}",
-                        self.n_points, y_values.len())
-            ));
-        }
-
-        self.y_values = y_values;
-        self.coefficients = compute_chebyshev_coefficients(&self.y_values);
-        self.fitted = true;
-        Ok(())
+        
+        self.fit(y_values)
     }
 
     /// Get Chebyshev polynomial coefficients
@@ -512,17 +488,17 @@ impl ChebyshevInterpolator {
     }
 
     /// Evaluate the interpolation
-    ///
+    /// 
     /// Parameters
     /// ----------
-    /// x : float, list of float, or numpy.ndarray
+    /// x : float or list of float
     ///     Point(s) at which to evaluate (must be in [x_min, x_max])
-    ///
+    /// 
     /// Returns
     /// -------
-    /// float or numpy.ndarray
+    /// float or list of float
     ///     Interpolated value(s)
-    ///
+    /// 
     /// Raises
     /// ------
     /// ValueError
@@ -541,7 +517,7 @@ impl ChebyshevInterpolator {
                             single_x, self.x_min, self.x_max)
                 ));
             }
-
+            
             let x_std = transform_to_standard(single_x, self.x_min, self.x_max);
             let result = if self.use_clenshaw {
                 chebyshev_evaluate_clenshaw(&self.coefficients, x_std)
@@ -551,39 +527,9 @@ impl ChebyshevInterpolator {
             return Ok(result.into_pyobject(py)?.into_any().unbind());
         }
 
-        // Handle numpy array with parallel evaluation
-        if let Ok(arr) = x.downcast::<numpy::PyArray1<f64>>() {
-            let x_slice = arr.readonly();
-            let x_data = x_slice.as_slice()?;
-
-            let results: Result<Vec<f64>, String> = x_data
-                .par_iter()
-                .map(|&xi| {
-                    if xi < self.x_min || xi > self.x_max {
-                        Err(format!("x value {:.4} is outside interpolation range [{:.4}, {:.4}]",
-                                   xi, self.x_min, self.x_max))
-                    } else {
-                        let x_std = transform_to_standard(xi, self.x_min, self.x_max);
-                        let result = if self.use_clenshaw {
-                            chebyshev_evaluate_clenshaw(&self.coefficients, x_std)
-                        } else {
-                            chebyshev_evaluate_direct(&self.coefficients, x_std)
-                        };
-                        Ok(result)
-                    }
-                })
-                .collect();
-
-            match results {
-                Ok(vals) => return Ok(vals.to_pyarray(py).into_any().unbind()),
-                Err(e) => return Err(PyValueError::new_err(e)),
-            }
-        }
-
-        // Handle list of floats with parallel evaluation
         if let Ok(x_list) = x.extract::<Vec<f64>>() {
             let results: Result<Vec<f64>, String> = x_list
-                .par_iter()
+                .iter()
                 .map(|&xi| {
                     if xi < self.x_min || xi > self.x_max {
                         Err(format!("x value {:.4} is outside interpolation range [{:.4}, {:.4}]",
@@ -599,9 +545,9 @@ impl ChebyshevInterpolator {
                     }
                 })
                 .collect();
-
+            
             match results {
-                Ok(vals) => return Ok(vals.to_pyarray(py).into_any().unbind()),
+                Ok(vals) => return Ok(vals.into_pyobject(py)?.into_any().unbind()),
                 Err(e) => return Err(PyValueError::new_err(e)),
             }
         }
