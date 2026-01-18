@@ -139,7 +139,7 @@ impl LagrangeInterpolator {
                 "x and y must have the same length"
             ));
         }
-        if x.is_empty() {
+        if x.is_empty() || y.is_empty() {
             return Err(PyValueError::new_err(
                 "x and y cannot be empty"
             ));
