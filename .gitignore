@@ -72,4 +72,4 @@ docs/_build/
 # Pyenv
 .python-version
 
-python/benchmarks/python/benchmark_plots
+python/benches/benchmark_plots

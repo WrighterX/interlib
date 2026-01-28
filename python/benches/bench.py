@@ -4,7 +4,7 @@ Visual Comparison Benchmark: interlib vs scipy.interpolate
 Generates side-by-side comparison plots showing performance and accuracy
 differences between interlib and scipy implementations.
 """
-
+import gc
 import argparse
 import time
 import numpy as np
@@ -96,7 +96,8 @@ def measure_performance(
     interlib_class,
     scipy_func,
     data_sizes,
-    n_runs=3,
+    n_runs=15,          # Increased default runs for better statistics
+    n_warmup=3,         # Added warmup runs to "prime" the cache/JIT
     needs_derivs=False,
     no_compare=False,
     **kwargs
@@ -107,38 +108,64 @@ def measure_performance(
 
     for n in data_sizes:
         try:
+            # 1. Prepare data outside the timed loop
             x_train = np.linspace(0, 10, n)
             y_train = np.sin(x_train)
             x_test = np.linspace(0, 10, n * 10)
             derivs = np.cos(x_train) if needs_derivs else None
 
-            # Measure interlib
+            # --- BENCHMARK INTERLIB ---
             il_runs = []
-            for _ in range(n_runs):
-                interp = interlib_class(**kwargs.get('interlib', {}))
-                start = time.perf_counter()
-                if needs_derivs:
-                    interp.fit(x_train, y_train, derivs)
-                else:
-                    interp.fit(x_train, y_train)
-                _ = interp(x_test)
-                il_runs.append(time.perf_counter() - start)
-            interlib_times.append(np.mean(il_runs))
-
-            if not no_compare:
-                # Measure scipy
-                sp_runs = []
-                for _ in range(n_runs):
+            
+            # Manual GC to ensure a clean slate before timing
+            gc.collect()
+            gc.disable() 
+            try:
+                for i in range(n_runs + n_warmup):
+                    # Re-instantiate to avoid any internal caching between runs
+                    interp = interlib_class(**kwargs.get('interlib', {}))
+                    
                     start = time.perf_counter()
-                    scipy_interp = scipy_func(x_train, y_train, **kwargs.get('scipy', {}))
-                    _ = scipy_interp(x_test)
-                    sp_runs.append(time.perf_counter() - start)
-                scipy_times.append(np.mean(sp_runs))
+                    if needs_derivs:
+                        interp.fit(x_train, y_train, derivs)
+                    else:
+                        interp.fit(x_train, y_train)
+                    _ = interp(x_test)
+                    end = time.perf_counter()
+                    
+                    # Only record after warmup phase
+                    if i >= n_warmup:
+                        il_runs.append(end - start)
+            finally:
+                gc.enable()
+                
+            # Use MEDIAN to be robust against outliers/OS spikes
+            interlib_times.append(np.median(il_runs))
+
+            # --- BENCHMARK SCIPY ---
+            if not no_compare:
+                sp_runs = []
+                gc.collect()
+                gc.disable()
+                try:
+                    for i in range(n_runs + n_warmup):
+                        start = time.perf_counter()
+                        scipy_interp = scipy_func(x_train, y_train, **kwargs.get('scipy', {}))
+                        _ = scipy_interp(x_test)
+                        end = time.perf_counter()
+                        
+                        if i >= n_warmup:
+                            sp_runs.append(end - start)
+                finally:
+                    gc.enable()
+                
+                scipy_times.append(np.median(sp_runs))
 
             sizes_ok.append(n)
 
         except Exception as e:
             print(f"  Failed at n={n}: {e}")
+            if gc.isenabled() == False: gc.enable() # Safety
             continue
 
     return sizes_ok, interlib_times, scipy_times
