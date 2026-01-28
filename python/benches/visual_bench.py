@@ -278,7 +278,7 @@ def main():
     print("VISUAL BENCHMARK SUITE FOR INTERLIB")
     print("="*80)
 
-    output_dir = "python/benchmark_plots"
+    output_dir = "benchmark_plots"
     print(f"\nOutput directory: {output_dir}/")
 
     # Generate all plots

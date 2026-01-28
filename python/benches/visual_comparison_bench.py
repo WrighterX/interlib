@@ -98,7 +98,7 @@ def measure_performance_comparison(
     return sizes_ok, interlib_times, scipy_times
 
 
-def plot_performance_comparison_chart(output_dir="python/benchmark_plots/comparison"):
+def plot_performance_comparison_chart(output_dir="python/benches/benchmark_plots/comparison"):
     """
     Generate performance comparison charts (bar charts and line plots).
     """
@@ -191,7 +191,7 @@ def plot_performance_comparison_chart(output_dir="python/benchmark_plots/compari
         plt.close()
 
 
-def plot_scaling_comparison(output_dir="python/benchmark_plots/comparison"):
+def plot_scaling_comparison(output_dir="python/benches/benchmark_plots/comparison"):
     """
     Generate scaling comparison plots (log-log) for multiple methods.
     """
@@ -247,7 +247,7 @@ def plot_scaling_comparison(output_dir="python/benchmark_plots/comparison"):
     plt.close()
 
 
-def plot_accuracy_comparison(output_dir="python/benchmark_plots/comparison"):
+def plot_accuracy_comparison(output_dir="python/benches/benchmark_plots/comparison"):
     """
     Generate accuracy comparison plots showing interpolation quality.
     """
@@ -337,7 +337,7 @@ def plot_accuracy_comparison(output_dir="python/benchmark_plots/comparison"):
             print(f"    Failed: {e}")
 
 
-def plot_summary_comparison(output_dir="python/benchmark_plots/comparison"):
+def plot_summary_comparison(output_dir="python/benches/benchmark_plots/comparison"):
     """
     Generate a summary comparison showing all methods at a fixed dataset size.
     """
@@ -423,7 +423,7 @@ def main():
     print("VISUAL COMPARISON BENCHMARK: interlib vs scipy.interpolate")
     print("="*80)
 
-    output_dir = "python/benchmark_plots/comparison"
+    output_dir = "python/benches/benchmark_plots/comparison"
     print(f"\nOutput directory: {output_dir}/")
 
     # Generate all comparison plots
