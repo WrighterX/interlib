@@ -78,7 +78,7 @@ def measure_performance(interpolator_class, data_sizes, n_runs=3, **kwargs):
     return sizes_ok, fit_times, eval_times
 
 
-def plot_performance_curves(output_dir="python/benchmark_plots"):
+def plot_performance_curves(output_dir="python/benches/benchmark_plots"):
     """
     Generate performance curves (Time vs. Data Size) in log-log scale.
     """
@@ -136,7 +136,7 @@ def plot_performance_curves(output_dir="python/benchmark_plots"):
     plt.close()
 
 
-def plot_interpolation_accuracy(output_dir="python/benchmark_plots"):
+def plot_interpolation_accuracy(output_dir="python/benches/benchmark_plots"):
     """
     Generate interpolation accuracy plots showing:
     - Original function
@@ -214,7 +214,7 @@ def plot_interpolation_accuracy(output_dir="python/benchmark_plots"):
             print(f"    Failed: {e}")
 
 
-def plot_method_comparison(output_dir="python/benchmark_plots"):
+def plot_method_comparison(output_dir="python/benches/benchmark_plots"):
     """
     Generate a comparison plot showing all methods on the same function.
     """
@@ -278,7 +278,7 @@ def main():
     print("VISUAL BENCHMARK SUITE FOR INTERLIB")
     print("="*80)
 
-    output_dir = "benchmark_plots"
+    output_dir = "python/benches/benchmark_plots"
     print(f"\nOutput directory: {output_dir}/")
 
     # Generate all plots
