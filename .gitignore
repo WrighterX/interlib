@@ -72,7 +72,4 @@ docs/_build/
 # Pyenv
 .python-version
 
-CLAUDE.md
-TODO.md
-
-python/benchmark_plots/
+python/benchmarks/python/benchmark_plots

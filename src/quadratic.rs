@@ -1,3 +1,5 @@
+// TODO: Replace cramer with gauss?
+
 /// Piecewise Quadratic Interpolation Module
 /// 
 /// This module implements piecewise quadratic interpolation using overlapping

@@ -215,7 +215,7 @@ impl LinearInterpolator {
             ));
         }
         
-        // Check if x values are strictly increasing
+        // Check if x values are strictly increasing (TODO: implement auto x sorting?)
         for i in 0..x.len() - 1 {
             if x[i] >= x[i + 1] {
                 return Err(PyValueError::new_err(
