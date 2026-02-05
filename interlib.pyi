@@ -364,17 +364,49 @@ class HermiteInterpolator:
 @typing.final
 class LagrangeInterpolator:
     r"""
-    Lagrange Polynomial Interpolator
+    Lagrange Polynomial Interpolator (Barycentric Form)
     
-    A stateful interpolator that fits a Lagrange polynomial through data points
-    and allows evaluation at arbitrary points.
+    A stateful interpolator that precomputes barycentric weights at fit
+    time, then evaluates the interpolant in O(n) per point.
     
-    # Attributes
+    This implementation uses the second barycentric formula from Berrut &
+    Trefethen (2004), which is both numerically stable and computationally
+    efficient compared to the classical Lagrange basis approach.
     
-    * `x_values` - Stored x coordinates of fitted data points
-    * `y_values` - Stored y coordinates of fitted data points
-    * `fitted` - Whether the interpolator has been fitted with data
+    Mathematical Background
+    -----------------------
+    Given n+1 points (x₀, y₀), ..., (xₙ, yₙ), the barycentric formula is:
+    
+               Σ  wⱼ/(x - xⱼ) · yⱼ
+    P(x) =   ─────────────────────────
+               Σ  wⱼ/(x - xⱼ)
+    
+    where wⱼ = 1 / Π(k≠j)(xⱼ - xₖ) are the barycentric weights.
+    
+    Complexity
+    ----------
+    - Weight precomputation: O(n²) — performed once at fit time
+    - Evaluation: O(n) per point — much faster than classical O(n²)
+    - Update with new data on same nodes: O(n) — no weight recomputation needed
+    - Adding a single new node: O(n) — incremental weight update
+    
+    Attributes
+    ----------
+    x_values : list of float
+        Stored interpolation nodes
+    y_values : list of float
+        Stored data values
+    weights : list of float
+        Precomputed barycentric weights (depend only on nodes, not data)
+    fitted : bool
+        Whether the interpolator has been fitted with data
+    
+    References
+    ----------
+    Berrut, J.-P. and Trefethen, L. N., "Barycentric Lagrange Interpolation,"
+    SIAM Review, Vol. 46, No. 3, pp. 501–517, 2004.
     """
+    
     def __new__(cls) -> LagrangeInterpolator:
         r"""
         Create a new Lagrange interpolator
@@ -384,33 +416,108 @@ class LagrangeInterpolator:
         LagrangeInterpolator
             A new, unfitted interpolator instance
         """
+    
     def fit(self, x: typing.Sequence[builtins.float], y: typing.Sequence[builtins.float]) -> None:
         r"""
         Fit the interpolator with data points
         
-        Stores the data points for later evaluation. The Lagrange polynomial
-        is constructed implicitly and evaluated on-demand.
+        Stores the nodes and data, and precomputes the barycentric weights
+        in O(n²). Because the weights depend only on the nodes (not the data),
+        subsequent calls to `update_y` can change the data in O(n) without
+        recomputing weights.
         
         Parameters
         ----------
         x : list of float
-            X coordinates of data points
+            X coordinates (nodes) of the data points. Must be distinct.
         y : list of float
-            Y coordinates of data points
+            Y coordinates (data values) at each node
         
         Raises
         ------
         ValueError
-            If x and y have different lengths or if either is empty
+            If x and y have different lengths, or if either is empty
         
         Examples
         --------
         >>> interp = LagrangeInterpolator()
         >>> interp.fit([0.0, 1.0, 2.0], [0.0, 1.0, 4.0])
         """
+    
+    def update_y(self, y: typing.Sequence[builtins.float]) -> None:
+        r"""
+        Replace the data values without recomputing weights
+        
+        Because barycentric weights depend only on the nodes (not the data),
+        swapping in new y-values is O(n). This is the key advantage noted in
+        Section 3 of Berrut & Trefethen: "the quantities that have to be
+        computed in O(n²) operations do not depend on the data fⱼ."
+        
+        This allows efficient re-interpolation of multiple functions defined
+        on the same set of nodes.
+        
+        Parameters
+        ----------
+        y : list of float
+            New data values. Must have the same length as the original x.
+        
+        Raises
+        ------
+        ValueError
+            If the interpolator has not been fitted, or if the length
+            of y does not match the number of nodes
+        
+        Examples
+        --------
+        >>> interp = LagrangeInterpolator()
+        >>> interp.fit([0.0, 1.0, 2.0], [0.0, 1.0, 4.0])
+        >>> interp(1.5)
+        2.25
+        >>> interp.update_y([1.0, 2.0, 5.0])  # O(n), no weight recomputation
+        >>> interp(1.5)
+        3.5
+        """
+    
+    def add_point(self, x_new: builtins.float, y_new: builtins.float) -> None:
+        r"""
+        Add a new data point, updating weights incrementally in O(n)
+        
+        Implements the O(n) update procedure described in Section 3 of
+        Berrut & Trefethen: each existing weight wⱼ is divided by
+        (xⱼ - x_{n+1}), and the new weight w_{n+1} is computed from
+        scratch — both steps cost O(n).
+        
+        This avoids the need for an O(n²) recomputation when incrementally
+        building up an interpolant.
+        
+        Parameters
+        ----------
+        x_new : float
+            The new node. Must be distinct from all existing nodes.
+        y_new : float
+            The data value at the new node
+        
+        Raises
+        ------
+        ValueError
+            If the interpolator has not been fitted
+        
+        Examples
+        --------
+        >>> interp = LagrangeInterpolator()
+        >>> interp.fit([0.0, 1.0, 2.0], [0.0, 1.0, 4.0])
+        >>> interp.add_point(3.0, 9.0)  # O(n) update
+        >>> interp(2.5)
+        6.25
+        """
+    
     def __call__(self, x: typing.Any) -> typing.Any:
         r"""
         Evaluate the interpolation at one or more points
+        
+        Uses the second barycentric formula for O(n) evaluation per point.
+        Exact node hits (where x equals a node exactly) are handled without
+        division by zero, as described in Section 7 of the paper.
         
         Parameters
         ----------
@@ -436,7 +543,10 @@ class LagrangeInterpolator:
         2.25
         >>> interp([0.5, 1.5])  # Multiple points
         [0.25, 2.25]
+        >>> interp(1.0)  # Exact node hit - returns stored value
+        1.0
         """
+    
     def __repr__(self) -> builtins.str:
         r"""
         String representation of the interpolator
@@ -444,7 +554,8 @@ class LagrangeInterpolator:
         Returns
         -------
         str
-            Description of the interpolator state
+            Description of the interpolator state, including whether it
+            uses the barycentric formula and how many points are fitted
         """
 
 @typing.final
