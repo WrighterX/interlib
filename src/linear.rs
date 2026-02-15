@@ -99,9 +99,9 @@ use pyo3::exceptions::PyValueError;
 /// 2. Find interval [xᵢ, xᵢ₊₁] containing x (linear search)
 /// 3. Compute interpolation parameter t
 /// 4. Return yᵢ + t * (yᵢ₊₁ - yᵢ)
-fn linear_interpolate_single(x_values: &[f64], y_values: &[f64], x: f64) -> f64 {
+fn linear_interpolate_single(x_values: &[f64], y_values: &[f64], slopes: &[f64], x: f64) -> f64 {
     let n = x_values.len();
-    
+
     // Handle edge cases
     if n == 0 {
         return f64::NAN;
@@ -109,7 +109,7 @@ fn linear_interpolate_single(x_values: &[f64], y_values: &[f64], x: f64) -> f64 
     if n == 1 {
         return y_values[0];
     }
-    
+
     // Boundary handling: constant extrapolation
     if x <= x_values[0] {
         return y_values[0];
@@ -117,24 +117,15 @@ fn linear_interpolate_single(x_values: &[f64], y_values: &[f64], x: f64) -> f64 
     if x >= x_values[n - 1] {
         return y_values[n - 1];
     }
-    
-    // Find the interval [x0, x1] containing x
-    for i in 0..n - 1 {
-        let x0 = x_values[i];
-        let x1 = x_values[i + 1];
-        
-        if x >= x0 && x <= x1 {
-            let y0 = y_values[i];
-            let y1 = y_values[i + 1];
-            
-            // Linear interpolation formula
-            let t = (x - x0) / (x1 - x0);
-            return y0 + t * (y1 - y0);
-        }
-    }
-    
-    // Should not reach here, but return NaN as fallback
-    f64::NAN
+
+    // Binary search for the interval containing x
+    let idx = match x_values.binary_search_by(|v| v.partial_cmp(&x).unwrap()) {
+        Ok(i) => if i >= n - 1 { i - 1 } else { i },
+        Err(i) => if i > 0 { i - 1 } else { 0 },
+    };
+
+    // Single multiply-add using precomputed slope
+    y_values[idx] + slopes[idx] * (x - x_values[idx])
 }
 
 /// Linear Interpolator
@@ -151,6 +142,7 @@ fn linear_interpolate_single(x_values: &[f64], y_values: &[f64], x: f64) -> f64 
 pub struct LinearInterpolator {
     x_values: Vec<f64>,
     y_values: Vec<f64>,
+    slopes: Vec<f64>,
     fitted: bool,
 }
 
@@ -171,6 +163,7 @@ impl LinearInterpolator {
         LinearInterpolator {
             x_values: Vec::new(),
             y_values: Vec::new(),
+            slopes: Vec::new(),
             fitted: false,
         }
     }
@@ -224,6 +217,9 @@ impl LinearInterpolator {
             }
         }
         
+        self.slopes = (0..x.len() - 1)
+            .map(|i| (y[i + 1] - y[i]) / (x[i + 1] - x[i]))
+            .collect();
         self.x_values = x;
         self.y_values = y;
         self.fitted = true;
@@ -270,7 +266,7 @@ impl LinearInterpolator {
 
         // Try to extract as a single float
         if let Ok(single_x) = x.extract::<f64>() {
-            let result = linear_interpolate_single(&self.x_values, &self.y_values, single_x);
+            let result = linear_interpolate_single(&self.x_values, &self.y_values, &self.slopes, single_x);
             return Ok(result.into_pyobject(py)?.into_any().unbind());
         }
 
@@ -278,7 +274,7 @@ impl LinearInterpolator {
         if let Ok(x_list) = x.extract::<Vec<f64>>() {
             let results: Vec<f64> = x_list
                 .iter()
-                .map(|&xi| linear_interpolate_single(&self.x_values, &self.y_values, xi))
+                .map(|&xi| linear_interpolate_single(&self.x_values, &self.y_values, &self.slopes, xi))
                 .collect();
             return Ok(results.into_pyobject(py)?.into_any().unbind());
         }
@@ -288,8 +284,138 @@ impl LinearInterpolator {
         ))
     }
 
+    /// Replace the data values and recompute slopes
+    ///
+    /// Because slopes depend on both x and y values, this recomputes
+    /// all slopes in O(n). However, the x values (and their sorted order)
+    /// are preserved.
+    ///
+    /// Parameters
+    /// ----------
+    /// y : list of float
+    ///     New data values. Must have the same length as the original x.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the interpolator has not been fitted, or if the length
+    ///     of y does not match the number of points
+    ///
+    /// Examples
+    /// --------
+    /// >>> interp = LinearInterpolator()
+    /// >>> interp.fit([0.0, 1.0, 2.0], [0.0, 1.0, 4.0])
+    /// >>> interp(0.5)
+    /// 0.5
+    /// >>> interp.update_y([0.0, 2.0, 6.0])
+    /// >>> interp(0.5)
+    /// 1.0
+    pub fn update_y(&mut self, y: Vec<f64>) -> PyResult<()> {
+        if !self.fitted {
+            return Err(PyValueError::new_err(
+                "Interpolator not fitted. Call fit(x, y) first."
+            ));
+        }
+        if y.len() != self.x_values.len() {
+            return Err(PyValueError::new_err(
+                format!(
+                    "y must have length {} (same as x), got {}",
+                    self.x_values.len(),
+                    y.len()
+                )
+            ));
+        }
+        self.slopes = (0..self.x_values.len() - 1)
+            .map(|i| (y[i + 1] - y[i]) / (self.x_values[i + 1] - self.x_values[i]))
+            .collect();
+        self.y_values = y;
+        Ok(())
+    }
+
+    /// Add a new data point, inserting at the correct sorted position
+    ///
+    /// Uses binary search to find the insertion index, then recomputes
+    /// only the 1–2 affected slopes.
+    ///
+    /// Parameters
+    /// ----------
+    /// x_new : float
+    ///     The new x coordinate. Must be distinct from all existing x values.
+    /// y_new : float
+    ///     The data value at the new point
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the interpolator has not been fitted
+    ///     If x_new duplicates an existing x value
+    ///
+    /// Examples
+    /// --------
+    /// >>> interp = LinearInterpolator()
+    /// >>> interp.fit([0.0, 2.0, 4.0], [0.0, 4.0, 8.0])
+    /// >>> interp.add_point(1.0, 1.0)
+    /// >>> interp(0.5)
+    /// 0.5
+    pub fn add_point(&mut self, x_new: f64, y_new: f64) -> PyResult<()> {
+        if !self.fitted {
+            return Err(PyValueError::new_err(
+                "Interpolator not fitted. Call fit(x, y) first."
+            ));
+        }
+
+        // Find insertion index via binary search
+        let idx = match self.x_values.binary_search_by(|v| v.partial_cmp(&x_new).unwrap()) {
+            Ok(_) => {
+                return Err(PyValueError::new_err(
+                    format!("x_new = {} already exists in the data", x_new)
+                ));
+            }
+            Err(i) => i,
+        };
+
+        self.x_values.insert(idx, x_new);
+        self.y_values.insert(idx, y_new);
+
+        // Recompute affected slopes
+        let n = self.x_values.len(); // new length after insert
+        if n < 2 {
+            self.slopes.clear();
+            return Ok(());
+        }
+
+        // The new point at index `idx` affects slopes at idx-1 and idx.
+        // The old slope at idx-1 (if it existed) is replaced by two new slopes.
+        if idx == 0 {
+            // Inserted at the beginning: add a new slope at index 0
+            let new_slope = (self.y_values[1] - self.y_values[0])
+                / (self.x_values[1] - self.x_values[0]);
+            self.slopes.insert(0, new_slope);
+            // Also recompute slope at index 1 if it existed (previously was slope 0)
+            // Actually the old slope[0] is now at position 1, but it connected old[0]..old[1]
+            // which is now new[1]..new[2], so the value is unchanged. No action needed.
+        } else if idx == n - 1 {
+            // Inserted at the end: add a new slope at the end
+            let new_slope = (self.y_values[idx] - self.y_values[idx - 1])
+                / (self.x_values[idx] - self.x_values[idx - 1]);
+            self.slopes.push(new_slope);
+        } else {
+            // Inserted in the middle: replace old slope at idx-1 with two new slopes
+            let slope_left = (self.y_values[idx] - self.y_values[idx - 1])
+                / (self.x_values[idx] - self.x_values[idx - 1]);
+            let slope_right = (self.y_values[idx + 1] - self.y_values[idx])
+                / (self.x_values[idx + 1] - self.x_values[idx]);
+            // Old slope at position idx-1 connected old[idx-1]..old[idx] (now new[idx-1]..new[idx])
+            // Replace it with slope_left, then insert slope_right after it
+            self.slopes[idx - 1] = slope_left;
+            self.slopes.insert(idx, slope_right);
+        }
+
+        Ok(())
+    }
+
     /// String representation of the interpolator
-    /// 
+    ///
     /// Returns
     /// -------
     /// str

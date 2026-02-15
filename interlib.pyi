@@ -730,6 +730,7 @@ class LinearInterpolator:
     
     * `x_values` - Stored x coordinates of data points
     * `y_values` - Stored y coordinates of data points
+    * `slopes` - Precomputed slopes for each segment
     * `fitted` - Whether the interpolator has been fitted with data
     """
     def __new__(cls) -> LinearInterpolator:
@@ -749,8 +750,7 @@ class LinearInterpolator:
         r"""
         Fit the interpolator with data points
         
-        Stores the data points for later evaluation. No pre-computation is needed
-        for linear interpolation.
+        Stores the data points and precomputes slopes for each segment.
         
         Parameters
         ----------
@@ -776,31 +776,88 @@ class LinearInterpolator:
         >>> interp = LinearInterpolator()
         >>> interp.fit([0.0, 1.0, 2.0], [0.0, 1.0, 4.0])
         """
+    def update_y(self, y: typing.Sequence[builtins.float]) -> None:
+        r"""
+        Replace the data values and recompute slopes
+
+        Because slopes depend on both x and y values, this recomputes
+        all slopes in O(n). The x values (and their sorted order) are
+        preserved.
+
+        Parameters
+        ----------
+        y : list of float
+            New data values. Must have the same length as the original x.
+
+        Raises
+        ------
+        ValueError
+            If the interpolator has not been fitted, or if the length
+            of y does not match the number of points
+
+        Examples
+        --------
+        >>> interp = LinearInterpolator()
+        >>> interp.fit([0.0, 1.0, 2.0], [0.0, 1.0, 4.0])
+        >>> interp(0.5)
+        0.5
+        >>> interp.update_y([0.0, 2.0, 6.0])
+        >>> interp(0.5)
+        1.0
+        """
+    def add_point(self, x_new: builtins.float, y_new: builtins.float) -> None:
+        r"""
+        Add a new data point, inserting at the correct sorted position
+
+        Uses binary search to find the insertion index, then recomputes
+        only the 1-2 affected slopes.
+
+        Parameters
+        ----------
+        x_new : float
+            The new x coordinate. Must be distinct from all existing x values.
+        y_new : float
+            The data value at the new point
+
+        Raises
+        ------
+        ValueError
+            If the interpolator has not been fitted
+            If x_new duplicates an existing x value
+
+        Examples
+        --------
+        >>> interp = LinearInterpolator()
+        >>> interp.fit([0.0, 2.0, 4.0], [0.0, 4.0, 8.0])
+        >>> interp.add_point(1.0, 1.0)
+        >>> interp(0.5)
+        0.5
+        """
     def __call__(self, x: typing.Any) -> typing.Any:
         r"""
         Evaluate the interpolation at one or more points
-        
+
         Parameters
         ----------
         x : float or list of float
             Point(s) at which to evaluate the interpolation
-        
+
         Returns
         -------
         float or list of float
             Linearly interpolated value(s) at the specified point(s)
-        
+
         Raises
         ------
         ValueError
             If the interpolator has not been fitted
             If input is neither a float nor a list of floats
-        
+
         Notes
         -----
         For points outside the data range, the interpolator returns the
         nearest boundary value (constant extrapolation).
-        
+
         Examples
         --------
         >>> interp = LinearInterpolator()
