@@ -45,7 +45,7 @@ METHOD_CONFIGS = {
     'newton': {
         'interlib_class': NewtonInterpolator,
         'scipy_func': lambda x, y: BarycentricInterpolator(x, y),
-        'default_sizes': [10, 20, 50, 100],
+        'default_sizes': [10, 20, 50, 100, 200, 500, 1000],
         'kwargs': {'interlib': {}, 'scipy': {}},
         'display_name': 'Newton vs Barycentric',
         'needs_derivs': False
@@ -189,14 +189,14 @@ def plot_performance_chart(
     il_times_ms = [t * 1000 for t in il_times]
     sp_times_ms = [t * 1000 for t in sp_times] if sp_times else None
 
-    fig, axs = plt.subplots(1, 2 if sp_times else 1, figsize=(14 if sp_times else 7, 6))
-
-    if not isinstance(axs, np.ndarray):
-        axs = [axs]
-
-    ax1 = axs[0]
+    safe_name = method_key.lower().replace(' ', '_')
     x_pos = np.arange(len(sizes))
     width = 0.35
+
+    # ---------------------------------------------------------
+    # CHART 1: Total Time Performance
+    # ---------------------------------------------------------
+    fig1, ax1 = plt.subplots(figsize=(7, 6))
 
     bars1 = ax1.bar(x_pos - width/2 if sp_times else x_pos, il_times_ms, width if sp_times else 0.7, label='interlib',
                     color='#2E86AB', alpha=0.8)
@@ -225,8 +225,18 @@ def plot_performance_chart(
                 ax1.text(bar.get_x() + bar.get_width()/2., height,
                          f'{height:.2f}', ha='center', va='bottom', fontsize=8)
 
+    plt.tight_layout()
+    output_path_time = Path(output_dir) / f"performance_time_{safe_name}.png"
+    plt.savefig(output_path_time, dpi=300, bbox_inches='tight')
+    print(f"    Saved Time Chart to: {output_path_time}")
+    plt.close(fig1) # Close to free memory
+
+    # ---------------------------------------------------------
+    # CHART 2: Speedup Ratio (Only if Scipy times exist)
+    # ---------------------------------------------------------
     if sp_times:
-        ax2 = axs[1]
+        fig2, ax2 = plt.subplots(figsize=(7, 6))
+        
         speedups = [sp/il if il > 0 else 0 for sp, il in zip(sp_times_ms, il_times_ms)]
         colors = ['green' if s > 1 else 'red' for s in speedups]
 
@@ -246,12 +256,11 @@ def plot_performance_chart(
                 ax2.text(pos, speedup, f'{speedup:.2f}x',
                          ha='center', va='bottom', fontsize=9, fontweight='bold')
 
-    plt.tight_layout()
-    safe_name = method_key.lower().replace(' ', '_')
-    output_path = Path(output_dir) / f"performance_{safe_name}.png"
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    print(f"    Saved to: {output_path}")
-    plt.close()
+        plt.tight_layout()
+        output_path_speedup = Path(output_dir) / f"performance_speedup_{safe_name}.png"
+        plt.savefig(output_path_speedup, dpi=300, bbox_inches='tight')
+        print(f"    Saved Speedup Chart to: {output_path_speedup}")
+        plt.close(fig2)
 
 def plot_scaling_chart(
     selected_methods,
@@ -370,7 +379,7 @@ def plot_accuracy_chart(
                  color='#2E86AB')
         if y_scipy is not None:
             axs[1].plot(x_test, error_scipy, linewidth=2, label=f'scipy (RMSE: {rmse_scipy:.6f})',
-                     color='#A23B72')
+                      color='#A23B72')
         axs[1].axhline(y=0, color='k', linestyle='--', linewidth=1, alpha=0.5)
         axs[1].set_ylabel('Error', fontsize=11, fontweight='bold')
         axs[1].set_title('Interpolation Error Comparison', fontsize=12, fontweight='bold')
@@ -380,11 +389,11 @@ def plot_accuracy_chart(
         # Bottom plot: Absolute error comparison
         abs_error_interlib = np.abs(error_interlib)
         axs[2].semilogy(x_test, abs_error_interlib, linewidth=2, label='interlib',
-                     color='#2E86AB')
+                      color='#2E86AB')
         if y_scipy is not None:
             abs_error_scipy = np.abs(error_scipy)
             axs[2].semilogy(x_test, abs_error_scipy, linewidth=2, label='scipy',
-                         color='#A23B72')
+                          color='#A23B72')
         axs[2].set_xlabel('x', fontsize=11, fontweight='bold')
         axs[2].set_ylabel('Absolute Error (log scale)', fontsize=11, fontweight='bold')
         axs[2].set_title('Absolute Error Comparison (Log Scale)', fontsize=12, fontweight='bold')
@@ -457,7 +466,7 @@ def plot_summary_chart(
         width = 0.35
 
         bars1 = ax.bar(x_pos - width/2 if scipy_times else x_pos, interlib_times, width if scipy_times else 0.7, label='interlib',
-                       color='#2E86AB', alpha=0.8)
+                        color='#2E86AB', alpha=0.8)
         if scipy_times:
             bars2 = ax.bar(x_pos + width/2, scipy_times, width, label='scipy',
                            color='#A23B72', alpha=0.8)
