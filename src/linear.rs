@@ -77,6 +77,7 @@
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
+use numpy::{PyArray1, PyReadonlyArray1, PyArrayMethods};
 
 /// Perform linear interpolation at a single point
 /// 
@@ -99,6 +100,7 @@ use pyo3::exceptions::PyValueError;
 /// 2. Find interval [xᵢ, xᵢ₊₁] containing x (linear search)
 /// 3. Compute interpolation parameter t
 /// 4. Return yᵢ + t * (yᵢ₊₁ - yᵢ)
+#[inline]
 fn linear_interpolate_single(x_values: &[f64], y_values: &[f64], slopes: &[f64], x: f64) -> f64 {
     let n = x_values.len();
 
@@ -169,28 +171,29 @@ impl LinearInterpolator {
     }
 
     /// Fit the interpolator with data points
-    /// 
-    /// Stores the data points for later evaluation. No pre-computation is needed
-    /// for linear interpolation.
-    /// 
+    ///
+    /// Stores the data points for later evaluation. If x values are not sorted,
+    /// they will be automatically sorted along with the corresponding y values.
+    /// No pre-computation is needed for linear interpolation.
+    ///
     /// Parameters
     /// ----------
     /// x : list of float
-    ///     X coordinates of data points (must be strictly increasing)
+    ///     X coordinates of data points (will be sorted if necessary)
     /// y : list of float
     ///     Y coordinates of data points
-    /// 
+    ///
     /// Raises
     /// ------
     /// ValueError
     ///     If x and y have different lengths
     ///     If x or y is empty
-    ///     If x values are not strictly increasing
-    /// 
+    ///
     /// Notes
     /// -----
-    /// X values must be sorted in strictly increasing order. This is verified
-    /// during fitting to ensure correct interpolation behavior.
+    /// If x values are not in strictly increasing order, both x and y arrays
+    /// will be automatically sorted by x values. This means the input arrays
+    /// may be reordered, but the final interpolation remains mathematically correct.
     /// 
     /// Examples
     /// --------
@@ -207,16 +210,29 @@ impl LinearInterpolator {
                 "x and y cannot be empty"
             ));
         }
-        
-        // Check if x values are strictly increasing (TODO: implement auto x sorting?)
+
+        // Check if x values are strictly increasing; if not, sort both arrays
+        let mut is_sorted = true;
         for i in 0..x.len() - 1 {
             if x[i] >= x[i + 1] {
-                return Err(PyValueError::new_err(
-                    "x values must be strictly increasing"
-                ));
+                is_sorted = false;
+                break;
             }
         }
-        
+
+        let (x, y) = if !is_sorted {
+            // Create sort indices based on x values
+            let mut indices: Vec<usize> = (0..x.len()).collect();
+            indices.sort_by(|&a, &b| x[a].partial_cmp(&x[b]).unwrap());
+
+            // Reorder both x and y using the sorted indices
+            let x_sorted = indices.iter().map(|&i| x[i]).collect();
+            let y_sorted = indices.iter().map(|&i| y[i]).collect();
+            (x_sorted, y_sorted)
+        } else {
+            (x, y)
+        };
+
         self.slopes = (0..x.len() - 1)
             .map(|i| (y[i + 1] - y[i]) / (x[i + 1] - x[i]))
             .collect();
@@ -270,17 +286,53 @@ impl LinearInterpolator {
             return Ok(result.into_pyobject(py)?.into_any().unbind());
         }
 
-        // Try to extract as a list of floats
+        // Try to extract as a NumPy array (zero-copy, most efficient)
+        if let Ok(arr) = x.extract::<PyReadonlyArray1<f64>>() {
+            let x_slice = arr.as_slice()?;
+            let result_array = unsafe { PyArray1::<f64>::new(py, [x_slice.len()], false) };
+            {
+                let result_slice = unsafe { result_array.as_slice_mut()? };
+                let n = x_slice.len();
+                let mut i = 0;
+
+                // 2-way loop unrolling for batch evaluation
+                while i + 1 < n {
+                    result_slice[i]     = linear_interpolate_single(&self.x_values, &self.y_values, &self.slopes, x_slice[i]);
+                    result_slice[i + 1] = linear_interpolate_single(&self.x_values, &self.y_values, &self.slopes, x_slice[i + 1]);
+                    i += 2;
+                }
+
+                // Handle remaining element if n is odd
+                if i < n {
+                    result_slice[i] = linear_interpolate_single(&self.x_values, &self.y_values, &self.slopes, x_slice[i]);
+                }
+            }
+            return Ok(result_array.into_any().unbind());
+        }
+
+        // Try to extract as a list of floats (with 2-way unrolling)
         if let Ok(x_list) = x.extract::<Vec<f64>>() {
-            let results: Vec<f64> = x_list
-                .iter()
-                .map(|&xi| linear_interpolate_single(&self.x_values, &self.y_values, &self.slopes, xi))
-                .collect();
+            let n = x_list.len();
+            let mut results = Vec::with_capacity(n);
+            let mut i = 0;
+
+            // 2-way loop unrolling for batch evaluation
+            while i + 1 < n {
+                results.push(linear_interpolate_single(&self.x_values, &self.y_values, &self.slopes, x_list[i]));
+                results.push(linear_interpolate_single(&self.x_values, &self.y_values, &self.slopes, x_list[i + 1]));
+                i += 2;
+            }
+
+            // Handle remaining element if n is odd
+            if i < n {
+                results.push(linear_interpolate_single(&self.x_values, &self.y_values, &self.slopes, x_list[i]));
+            }
+
             return Ok(results.into_pyobject(py)?.into_any().unbind());
         }
 
         Err(PyValueError::new_err(
-            "Input must be a float or a list of floats"
+            "Input must be a float, list of floats, or NumPy array"
         ))
     }
 
