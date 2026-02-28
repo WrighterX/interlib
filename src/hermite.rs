@@ -92,27 +92,28 @@
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
+use numpy::{PyArray1, PyReadonlyArray1, PyArrayMethods};
 
 /// Compute Hermite divided differences
-/// 
+///
 /// Builds divided differences table using both function values and derivatives.
 /// The table is constructed with "doubled" points where consecutive entries
 /// for the same x value use the derivative for the first divided difference.
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `x_values` - Array of x coordinates
 /// * `y_values` - Array of y coordinates (function values)
 /// * `dy_values` - Array of derivatives at x coordinates
-/// 
+///
 /// # Returns
-/// 
+///
 /// Tuple of (z, coefficients) where:
 /// - z: Doubled x values [x₀, x₀, x₁, x₁, ...]
 /// - coefficients: Divided difference coefficients
-/// 
+///
 /// # Algorithm
-/// 
+///
 /// 1. Create doubled point array
 /// 2. Initialize with function values
 /// 3. Use derivatives for f[xᵢ, xᵢ]
@@ -124,65 +125,111 @@ fn hermite_divided_differences(
     dy_values: &[f64],
 ) -> (Vec<f64>, Vec<f64>) {
     let n = x_values.len();
-    
-    // Build z array (doubled x values) and q array (divided differences table)
-    let mut z = Vec::with_capacity(2 * n);
-    let mut q = vec![vec![0.0; 2 * n]; 2 * n];
-    
+    let m = 2 * n;  // Total number of points (doubled)
+
+    // OPTIMIZATION 1: Use flat array instead of 2D Vec for better cache locality
+    // This eliminates 2n allocations and improves memory access patterns
+    let mut z = Vec::with_capacity(m);
+    let mut q = vec![0.0; m * m];  // Single allocation: flat row-major array
+
+    // OPTIMIZATION: Precompute stride for flat array access
+    // Access q[i][j] as q[i * m + j]
+    let stride = m;
+
     // Initialize z and q[i][0] with doubled points
     for i in 0..n {
         z.push(x_values[i]);
         z.push(x_values[i]);
-        q[2 * i][0] = y_values[i];
-        q[2 * i + 1][0] = y_values[i];
+        q[2 * i * stride] = y_values[i];
+        q[(2 * i + 1) * stride] = y_values[i];
     }
-    
+
     // First divided differences
     for i in 0..n {
         // For doubled points, use derivative
-        q[2 * i + 1][1] = dy_values[i];
-        
+        q[(2 * i + 1) * stride + 1] = dy_values[i];
+
         // For different points, use standard divided difference
         if i > 0 {
-            q[2 * i][1] = (q[2 * i][0] - q[2 * i - 1][0]) / (z[2 * i] - z[2 * i - 1]);
+            let idx_cur = 2 * i * stride;
+            let idx_prev = (2 * i - 1) * stride;
+            let z_cur = z[2 * i];
+            let z_prev = z[2 * i - 1];
+            q[2 * i * stride + 1] = (q[idx_cur] - q[idx_prev]) / (z_cur - z_prev);
         }
     }
-    
-    // Higher order divided differences
-    for j in 2..2 * n {
-        for i in j..2 * n {
-            q[i][j] = (q[i][j - 1] - q[i - 1][j - 1]) / (z[i] - z[i - j]);
+
+    // OPTIMIZATION 2 & 3: Higher order divided differences with cached lookups
+    // Cache z lookups and q accesses for better performance
+    // OPTIMIZATION 4: 2-way loop unrolling for SIMD auto-vectorization
+    // Process 2 elements per iteration (optimal balance - 4-way had register pressure)
+    for j in 2..m {
+        let mut i = j;
+
+        // 2-way unrolled loop: process two elements per iteration
+        // This allows compiler to auto-vectorize with SIMD instructions (AVX2)
+        while i + 1 < m {
+            // First element (i)
+            let z_i_0 = z[i];
+            let z_ij_0 = z[i - j];
+            let denominator_0 = z_i_0 - z_ij_0;
+            let q_cur_prev_0 = q[i * stride + j - 1];
+            let q_prev_row_0 = q[(i - 1) * stride + j - 1];
+            q[i * stride + j] = (q_cur_prev_0 - q_prev_row_0) / denominator_0;
+
+            // Second element (i+1) - independent from first, SIMD-friendly
+            let z_i_1 = z[i + 1];
+            let z_ij_1 = z[i + 1 - j];
+            let denominator_1 = z_i_1 - z_ij_1;
+            let q_cur_prev_1 = q[(i + 1) * stride + j - 1];
+            let q_prev_row_1 = q[i * stride + j - 1];
+            q[(i + 1) * stride + j] = (q_cur_prev_1 - q_prev_row_1) / denominator_1;
+
+            i += 2;
+        }
+
+        // Handle remainder if m - j is odd
+        if i < m {
+            let z_i = z[i];
+            let z_ij = z[i - j];
+            let denominator = z_i - z_ij;
+            let q_cur_prev = q[i * stride + j - 1];
+            let q_prev_row = q[(i - 1) * stride + j - 1];
+            q[i * stride + j] = (q_cur_prev - q_prev_row) / denominator;
         }
     }
-    
-    // Extract coefficients (diagonal of q)
-    let mut coefficients = Vec::with_capacity(2 * n);
-    for i in 0..2 * n {
-        coefficients.push(q[i][i]);
+
+    // Extract coefficients (diagonal of q) from flat array
+    let mut coefficients = Vec::with_capacity(m);
+    for i in 0..m {
+        coefficients.push(q[i * stride + i]);
     }
-    
+
     (z, coefficients)
 }
 
 /// Evaluate Hermite polynomial using Horner's method
-/// 
+///
 /// Efficiently evaluates the Newton form of the Hermite polynomial.
-/// 
+/// Marked #[inline] to eliminate function call overhead and allow
+/// compiler to inline and optimize for each call site.
+///
 /// # Arguments
-/// 
+///
 /// * `z` - Doubled x values array
 /// * `coefficients` - Divided difference coefficients
 /// * `x` - Point at which to evaluate
-/// 
+///
 /// # Returns
-/// 
+///
 /// The interpolated value at x
+#[inline]
 fn hermite_evaluate(z: &[f64], coefficients: &[f64], x: f64) -> f64 {
     let n = coefficients.len();
     if n == 0 {
         return f64::NAN;
     }
-    
+
     // Horner's method for nested polynomial evaluation
     let mut result = coefficients[n - 1];
     for i in (0..n - 1).rev() {
@@ -326,30 +373,34 @@ impl HermiteInterpolator {
     }
 
     /// Evaluate the interpolation at one or more points
-    /// 
+    ///
     /// Uses Horner's method for efficient and stable evaluation.
-    /// 
+    /// Supports single floats, lists, and NumPy arrays with zero-copy I/O.
+    ///
     /// Parameters
     /// ----------
-    /// x : float or list of float
+    /// x : float, list of float, or numpy.ndarray
     ///     Point(s) at which to evaluate the interpolation
-    /// 
+    ///
     /// Returns
     /// -------
-    /// float or list of float
+    /// float, list of float, or numpy.ndarray
     ///     Hermite interpolated value(s) at the specified point(s)
-    /// 
+    ///
     /// Raises
     /// ------
     /// ValueError
     ///     If the interpolator has not been fitted
-    ///     If input is neither a float nor a list of floats
-    /// 
+    ///     If input is neither a float nor a list of floats nor a NumPy array
+    ///
     /// Notes
     /// -----
     /// The Hermite polynomial passes through all data points and has the
     /// correct derivative at each point, providing very accurate interpolation
     /// for smooth functions.
+    ///
+    /// When a NumPy array is passed, evaluation is performed with zero-copy
+    /// I/O for maximum performance.
     pub fn __call__(&self, py: Python<'_>, x: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         if !self.fitted {
             return Err(PyValueError::new_err(
@@ -363,17 +414,70 @@ impl HermiteInterpolator {
             return Ok(result.into_pyobject(py)?.into_any().unbind());
         }
 
+        // Try to extract as a NumPy array (zero-copy I/O)
+        if let Ok(arr) = x.extract::<PyReadonlyArray1<f64>>() {
+            let x_slice = arr.as_slice()?;
+            let result_array = unsafe { PyArray1::<f64>::new(py, [x_slice.len()], false) };
+            {
+                let result_slice = unsafe { result_array.as_slice_mut()? };
+
+                // OPTIMIZATION: Cache z and coefficients to avoid repeated lookups
+                let z = &self.z_values;
+                let coeff = &self.coefficients;
+                let n = x_slice.len();
+                let mut i = 0;
+
+                // OPTIMIZATION: 2-way unroll evaluation loop for SIMD
+                // Process 2 independent points per iteration
+                while i + 1 < n {
+                    // Evaluate point i
+                    result_slice[i] = hermite_evaluate(z, coeff, x_slice[i]);
+
+                    // Evaluate point i+1 (independent - SIMD-friendly)
+                    result_slice[i + 1] = hermite_evaluate(z, coeff, x_slice[i + 1]);
+
+                    i += 2;
+                }
+
+                // Handle remainder if n is odd
+                if i < n {
+                    result_slice[i] = hermite_evaluate(z, coeff, x_slice[i]);
+                }
+            }
+            return Ok(result_array.into_any().unbind());
+        }
+
         // Try to extract as a list of floats
         if let Ok(x_list) = x.extract::<Vec<f64>>() {
-            let results: Vec<f64> = x_list
-                .iter()
-                .map(|&xi| hermite_evaluate(&self.z_values, &self.coefficients, xi))
-                .collect();
+            // OPTIMIZATION: Cache z and coefficients for better performance
+            let z = &self.z_values;
+            let coeff = &self.coefficients;
+            let n = x_list.len();
+
+            let mut results = Vec::with_capacity(n);
+
+            let mut i = 0;
+            // OPTIMIZATION: 2-way unroll evaluation loop
+            while i + 1 < n {
+                // Evaluate point i
+                results.push(hermite_evaluate(z, coeff, x_list[i]));
+
+                // Evaluate point i+1 (independent - SIMD-friendly)
+                results.push(hermite_evaluate(z, coeff, x_list[i + 1]));
+
+                i += 2;
+            }
+
+            // Handle remainder if n is odd
+            if i < n {
+                results.push(hermite_evaluate(z, coeff, x_list[i]));
+            }
+
             return Ok(results.into_pyobject(py)?.into_any().unbind());
         }
 
         Err(PyValueError::new_err(
-            "Input must be a float or a list of floats"
+            "Input must be a float, a list of floats, or a NumPy array"
         ))
     }
 
