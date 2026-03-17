@@ -84,6 +84,7 @@
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
+use numpy::{PyArray1, PyReadonlyArray1, PyArrayMethods};
 
 /// Solve linear system using Gaussian elimination with partial pivoting
 /// 
@@ -176,26 +177,36 @@ fn least_squares_polynomial(x_values: &[f64], y_values: &[f64], degree: usize) -
     }
     
     // Build normal equations: (AᵀA)c = Aᵀb
+    // Single pass: precompute sum_xp[p] = Σ x[k]^p and sum_xyp[i] = Σ y[k] * x[k]^i
+    // Replaces n*m² powi() calls with n*(2m-1) multiplications
+    let max_power = 2 * m - 1;
+    let mut sum_xp = vec![0.0f64; max_power + 1];
+    let mut sum_xyp = vec![0.0f64; m];
+
+    for k in 0..n {
+        let xk = x_values[k];
+        let yk = y_values[k];
+        let mut xp = 1.0f64;
+        // First m powers: accumulate both sum_xp and sum_xyp (branch-free)
+        for p in 0..m {
+            sum_xp[p] += xp;
+            sum_xyp[p] += yk * xp;
+            xp *= xk;
+        }
+        // Remaining m-1 powers: only sum_xp needed
+        for p in m..=max_power {
+            sum_xp[p] += xp;
+            xp *= xk;
+        }
+    }
+
     let mut ata = vec![vec![0.0; m]; m];
-    let mut atb = vec![0.0; m];
-    
-    // Compute AᵀA
     for i in 0..m {
         for j in 0..m {
-            let mut sum = 0.0;
-            for k in 0..n {
-                sum += x_values[k].powi((i + j) as i32);
-            }
-            ata[i][j] = sum;
+            ata[i][j] = sum_xp[i + j];
         }
-        
-        // Compute Aᵀb
-        let mut sum = 0.0;
-        for k in 0..n {
-            sum += y_values[k] * x_values[k].powi(i as i32);
-        }
-        atb[i] = sum;
     }
+    let atb = sum_xyp;
     
     solve_linear_system(ata, atb)
 }
@@ -212,6 +223,7 @@ fn least_squares_polynomial(x_values: &[f64], y_values: &[f64], degree: usize) -
 /// # Returns
 /// 
 /// The value of the polynomial at x
+#[inline]
 fn evaluate_polynomial(coefficients: &[f64], x: f64) -> f64 {
     let mut result = 0.0;
     let mut x_power = 1.0;
@@ -460,17 +472,38 @@ impl LeastSquaresInterpolator {
             return Ok(result.into_pyobject(py)?.into_any().unbind());
         }
 
+        // Handle NumPy array input (zero-copy)
+        if let Ok(arr) = x.extract::<PyReadonlyArray1<f64>>() {
+            let x_slice = arr.as_slice()?;
+            let n = x_slice.len();
+            let result_array = unsafe { PyArray1::<f64>::new(py, [n], false) };
+            let result_slice = unsafe { result_array.as_slice_mut()? };
+            let mut i = 0;
+            while i + 1 < n {
+                result_slice[i]     = evaluate_polynomial(&self.coefficients, x_slice[i]);
+                result_slice[i + 1] = evaluate_polynomial(&self.coefficients, x_slice[i + 1]);
+                i += 2;
+            }
+            if i < n { result_slice[i] = evaluate_polynomial(&self.coefficients, x_slice[i]); }
+            return Ok(result_array.into_any().unbind());
+        }
+
         // Try to extract as a list of floats
         if let Ok(x_list) = x.extract::<Vec<f64>>() {
-            let results: Vec<f64> = x_list
-                .iter()
-                .map(|&xi| evaluate_polynomial(&self.coefficients, xi))
-                .collect();
+            let n = x_list.len();
+            let mut results = Vec::with_capacity(n);
+            let mut i = 0;
+            while i + 1 < n {
+                results.push(evaluate_polynomial(&self.coefficients, x_list[i]));
+                results.push(evaluate_polynomial(&self.coefficients, x_list[i + 1]));
+                i += 2;
+            }
+            if i < n { results.push(evaluate_polynomial(&self.coefficients, x_list[i])); }
             return Ok(results.into_pyobject(py)?.into_any().unbind());
         }
 
         Err(PyValueError::new_err(
-            "Input must be a float or a list of floats"
+            "Input must be a float, list of floats, or NumPy array"
         ))
     }
 
