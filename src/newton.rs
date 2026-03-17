@@ -58,6 +58,7 @@
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
+use numpy::{PyArray1, PyReadonlyArray1, PyArrayMethods};
 
 /// Compute divided differences table
 /// 
@@ -97,6 +98,7 @@ fn divided_differences(xs: &[f64], ys: &[f64]) -> Vec<f64> {
 /// # Returns
 /// 
 /// The interpolated value at point x
+#[inline]
 fn newton_evaluate(xs: &[f64], coef: &[f64], x: f64) -> f64 {
     let n = coef.len();
     let mut result = coef[n - 1];
@@ -108,20 +110,18 @@ fn newton_evaluate(xs: &[f64], coef: &[f64], x: f64) -> f64 {
 }
 
 /// Newton Divided Differences Interpolator
-/// 
+///
 /// A stateful interpolator that pre-computes divided difference coefficients
 /// for efficient repeated evaluation.
-/// 
+///
 /// # Attributes
-/// 
+///
 /// * `x_values` - Stored x coordinates of data points
-/// * `y_values` - Stored y coordinates of data points
 /// * `coefficients` - Pre-computed divided difference coefficients
 /// * `fitted` - Whether the interpolator has been fitted
 #[pyclass]
 pub struct NewtonInterpolator {
     x_values: Vec<f64>,
-    y_values: Vec<f64>,
     coefficients: Vec<f64>,
     fitted: bool,
 }
@@ -138,7 +138,6 @@ impl NewtonInterpolator {
     pub fn new() -> Self {
         NewtonInterpolator {
             x_values: Vec::new(),
-            y_values: Vec::new(),
             coefficients: Vec::new(),
             fitted: false,
         }
@@ -177,11 +176,8 @@ impl NewtonInterpolator {
             ));
         }
         
+        self.coefficients = divided_differences(&x, &y);
         self.x_values = x;
-        self.y_values = y;
-        
-        // Compute Newton coefficients during fitting
-        self.coefficients = divided_differences(&self.x_values, &self.y_values);
         
         self.fitted = true;
         Ok(())
@@ -243,17 +239,49 @@ impl NewtonInterpolator {
             return Ok(result.into_pyobject(py)?.into_any().unbind());
         }
 
-        // Try to extract as a list of floats
+        // Try to extract as a NumPy array (zero-copy, most efficient)
+        if let Ok(arr) = x.extract::<PyReadonlyArray1<f64>>() {
+            let x_slice = arr.as_slice()?;
+            let result_array = unsafe { PyArray1::<f64>::new(py, [x_slice.len()], false) };
+            let result_slice = unsafe { result_array.as_slice_mut()? };
+            let n = x_slice.len();
+            let mut i = 0;
+
+            // 2-way loop unrolling for batch evaluation
+            while i + 1 < n {
+                result_slice[i]     = newton_evaluate(&self.x_values, &self.coefficients, x_slice[i]);
+                result_slice[i + 1] = newton_evaluate(&self.x_values, &self.coefficients, x_slice[i + 1]);
+                i += 2;
+            }
+
+            if i < n {
+                result_slice[i] = newton_evaluate(&self.x_values, &self.coefficients, x_slice[i]);
+            }
+
+            return Ok(result_array.into_any().unbind());
+        }
+
+        // Try to extract as a list of floats (with 2-way unrolling)
         if let Ok(x_list) = x.extract::<Vec<f64>>() {
-            let results: Vec<f64> = x_list
-                .iter()
-                .map(|&xi| newton_evaluate(&self.x_values, &self.coefficients, xi))
-                .collect();
+            let n = x_list.len();
+            let mut results = Vec::with_capacity(n);
+            let mut i = 0;
+
+            while i + 1 < n {
+                results.push(newton_evaluate(&self.x_values, &self.coefficients, x_list[i]));
+                results.push(newton_evaluate(&self.x_values, &self.coefficients, x_list[i + 1]));
+                i += 2;
+            }
+
+            if i < n {
+                results.push(newton_evaluate(&self.x_values, &self.coefficients, x_list[i]));
+            }
+
             return Ok(results.into_pyobject(py)?.into_any().unbind());
         }
 
         Err(PyValueError::new_err(
-            "Input must be a float or a list of floats"
+            "Input must be a float, list of floats, or NumPy array"
         ))
     }
 

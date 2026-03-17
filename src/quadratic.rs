@@ -285,22 +285,21 @@ impl QuadraticInterpolator {
         if let Ok(arr) = x.extract::<PyReadonlyArray1<f64>>() {
             let x_slice = arr.as_slice()?;
             let result_array = unsafe { PyArray1::<f64>::new(py, [x_slice.len()], false) };
-            {
-                let result_slice = unsafe { result_array.as_slice_mut()? };
-                let n = x_slice.len();
-                let mut i = 0;
+            let result_slice = unsafe { result_array.as_slice_mut()? };
+            let n = x_slice.len();
+            let mut i = 0;
 
-                // 2-way loop unrolling for batch evaluation
-                while i + 1 < n {
-                    result_slice[i]     = self.eval_single(x_slice[i]);
-                    result_slice[i + 1] = self.eval_single(x_slice[i + 1]);
-                    i += 2;
-                }
-
-                if i < n {
-                    result_slice[i] = self.eval_single(x_slice[i]);
-                }
+            // 2-way loop unrolling for batch evaluation
+            while i + 1 < n {
+                result_slice[i]     = self.eval_single(x_slice[i]);
+                result_slice[i + 1] = self.eval_single(x_slice[i + 1]);
+                i += 2;
             }
+
+            if i < n {
+                result_slice[i] = self.eval_single(x_slice[i]);
+            }
+
             return Ok(result_array.into_any().unbind());
         }
 
@@ -324,7 +323,7 @@ impl QuadraticInterpolator {
         }
 
         Err(PyValueError::new_err(
-            "Input must be a float or a list of floats"
+            "Input must be a float, list of floats, or NumPy array"
         ))
     }
 
