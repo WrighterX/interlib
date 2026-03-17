@@ -130,6 +130,7 @@
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
+use numpy::{PyArray1, PyReadonlyArray1, PyArrayMethods};
 
 /// RBF kernel types with their evaluation functions
 #[derive(Clone, Copy, Debug)]
@@ -152,6 +153,7 @@ impl RBFKernel {
     /// # Returns
     /// 
     /// Kernel value φ(r, ε)
+    #[inline]
     fn evaluate(&self, r: f64, epsilon: f64) -> f64 {
         match self {
             RBFKernel::Gaussian => (-epsilon * epsilon * r * r).exp(),
@@ -252,17 +254,20 @@ fn compute_rbf_weights(
     epsilon: f64,
 ) -> Result<Vec<f64>, String> {
     let n = x_values.len();
-    
-    // Build the RBF matrix Φ
+
+    // Build the RBF matrix Φ — exploit symmetry (Φᵢⱼ = Φⱼᵢ) to halve kernel evaluations
     let mut matrix = vec![vec![0.0; n]; n];
-    
+    let diag = kernel.evaluate(0.0, epsilon);
     for i in 0..n {
-        for j in 0..n {
+        matrix[i][i] = diag;
+        for j in i + 1..n {
             let r = (x_values[i] - x_values[j]).abs();
-            matrix[i][j] = kernel.evaluate(r, epsilon);
+            let val = kernel.evaluate(r, epsilon);
+            matrix[i][j] = val;
+            matrix[j][i] = val;
         }
     }
-    
+
     solve_linear_system(matrix, y_values.to_vec())
 }
 
@@ -281,6 +286,7 @@ fn compute_rbf_weights(
 /// # Returns
 /// 
 /// Interpolated value at x
+#[inline]
 fn rbf_evaluate(
     x_values: &[f64],
     weights: &[f64],
@@ -313,7 +319,6 @@ fn rbf_evaluate(
 #[pyclass]
 pub struct RBFInterpolator {
     x_values: Vec<f64>,
-    y_values: Vec<f64>,
     weights: Vec<f64>,
     kernel: RBFKernel,
     epsilon: f64,
@@ -368,7 +373,6 @@ impl RBFInterpolator {
         
         Ok(RBFInterpolator {
             x_values: Vec::new(),
-            y_values: Vec::new(),
             weights: Vec::new(),
             kernel: kernel_type,
             epsilon,
@@ -410,10 +414,9 @@ impl RBFInterpolator {
         }
         
         self.x_values = x;
-        self.y_values = y;
-        
+
         // Compute RBF weights
-        match compute_rbf_weights(&self.x_values, &self.y_values, self.kernel, self.epsilon) {
+        match compute_rbf_weights(&self.x_values, &y, self.kernel, self.epsilon) {
             Ok(weights) => {
                 self.weights = weights;
                 self.fitted = true;
@@ -471,16 +474,42 @@ impl RBFInterpolator {
             return Ok(result.into_pyobject(py)?.into_any().unbind());
         }
 
+        // NumPy array — zero-copy path
+        if let Ok(arr) = x.extract::<PyReadonlyArray1<f64>>() {
+            let x_slice = arr.as_slice()?;
+            let result_array = unsafe { PyArray1::<f64>::new(py, [x_slice.len()], false) };
+            let result_slice = unsafe { result_array.as_slice_mut()? };
+            let n = x_slice.len();
+            let mut i = 0;
+            while i + 1 < n {
+                result_slice[i]     = rbf_evaluate(&self.x_values, &self.weights, self.kernel, self.epsilon, x_slice[i]);
+                result_slice[i + 1] = rbf_evaluate(&self.x_values, &self.weights, self.kernel, self.epsilon, x_slice[i + 1]);
+                i += 2;
+            }
+            if i < n {
+                result_slice[i] = rbf_evaluate(&self.x_values, &self.weights, self.kernel, self.epsilon, x_slice[i]);
+            }
+            return Ok(result_array.into_any().unbind());
+        }
+
+        // Python list — 2-way unrolling
         if let Ok(x_list) = x.extract::<Vec<f64>>() {
-            let results: Vec<f64> = x_list
-                .iter()
-                .map(|&xi| rbf_evaluate(&self.x_values, &self.weights, self.kernel, self.epsilon, xi))
-                .collect();
+            let n = x_list.len();
+            let mut results = Vec::with_capacity(n);
+            let mut i = 0;
+            while i + 1 < n {
+                results.push(rbf_evaluate(&self.x_values, &self.weights, self.kernel, self.epsilon, x_list[i]));
+                results.push(rbf_evaluate(&self.x_values, &self.weights, self.kernel, self.epsilon, x_list[i + 1]));
+                i += 2;
+            }
+            if i < n {
+                results.push(rbf_evaluate(&self.x_values, &self.weights, self.kernel, self.epsilon, x_list[i]));
+            }
             return Ok(results.into_pyobject(py)?.into_any().unbind());
         }
 
         Err(PyValueError::new_err(
-            "Input must be a float or a list of floats"
+            "Input must be a float, list of floats, or NumPy array"
         ))
     }
 
