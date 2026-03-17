@@ -61,6 +61,7 @@
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
+use numpy::{PyArray1, PyReadonlyArray1, PyArrayMethods};
 
 /// Cubic spline segment representation
 /// 
@@ -84,6 +85,7 @@ impl SplineSegment {
     /// # Returns
     /// 
     /// The value of the cubic polynomial at x_val
+    #[inline]
     fn eval(&self, x_val: f64) -> f64 {
         let dx = x_val - self.x;
         self.a + self.b * dx + self.c * dx * dx + self.d * dx * dx * dx
@@ -213,13 +215,11 @@ fn compute_not_a_knot_spline(x: &[f64], y: &[f64]) -> Vec<SplineSegment> {
 /// # Attributes
 /// 
 /// * `x_values` - Stored x coordinates of data points
-/// * `y_values` - Stored y coordinates of data points
 /// * `segments` - Pre-computed cubic polynomial segments
 /// * `fitted` - Whether the interpolator has been fitted
 #[pyclass]
 pub struct CubicSplineInterpolator {
     x_values: Vec<f64>,
-    y_values: Vec<f64>,
     segments: Vec<SplineSegment>,
     fitted: bool,
 }
@@ -236,7 +236,6 @@ impl CubicSplineInterpolator {
     pub fn new() -> Self {
         CubicSplineInterpolator {
             x_values: Vec::new(),
-            y_values: Vec::new(),
             segments: Vec::new(),
             fitted: false,
         }
@@ -287,10 +286,7 @@ impl CubicSplineInterpolator {
         }
         
         self.x_values = x;
-        self.y_values = y;
-        
-        // Compute spline coefficients
-        self.segments = compute_not_a_knot_spline(&self.x_values, &self.y_values);
+        self.segments = compute_not_a_knot_spline(&self.x_values, &y);
         
         if self.segments.is_empty() {
             return Err(PyValueError::new_err(
@@ -349,9 +345,8 @@ impl CubicSplineInterpolator {
             return Err(PyValueError::new_err("Interpolator not fitted."));
         }
 
-        // 1. Define the evaluation logic (helper)
+        let n = self.x_values.len();
         let eval_one = |val: f64| -> f64 {
-            let n = self.x_values.len();
             if val <= self.x_values[0] { return self.segments[0].eval(val); }
             if val >= self.x_values[n - 1] { return self.segments[n - 2].eval(val); }
             
@@ -362,20 +357,43 @@ impl CubicSplineInterpolator {
             self.segments[idx].eval(val)
         };
 
-        // 2. Apply the logic and RETURN the result to Python
         // Handle single float input
         if let Ok(single_x) = x.extract::<f64>() {
             let res = eval_one(single_x);
             return Ok(res.into_pyobject(py)?.into_any().unbind());
         }
 
+        // Handle NumPy array input (zero-copy)
+        if let Ok(arr) = x.extract::<PyReadonlyArray1<f64>>() {
+            let x_slice = arr.as_slice()?;
+            let n = x_slice.len();
+            let result_array = unsafe { PyArray1::<f64>::new(py, [n], false) };
+            let result_slice = unsafe { result_array.as_slice_mut()? };
+            let mut i = 0;
+            while i + 1 < n {
+                result_slice[i]     = eval_one(x_slice[i]);
+                result_slice[i + 1] = eval_one(x_slice[i + 1]);
+                i += 2;
+            }
+            if i < n { result_slice[i] = eval_one(x_slice[i]); }
+            return Ok(result_array.into_any().unbind());
+        }
+
         // Handle list of floats input
         if let Ok(x_list) = x.extract::<Vec<f64>>() {
-            let results: Vec<f64> = x_list.into_iter().map(eval_one).collect();
+            let n = x_list.len();
+            let mut results = Vec::with_capacity(n);
+            let mut i = 0;
+            while i + 1 < n {
+                results.push(eval_one(x_list[i]));
+                results.push(eval_one(x_list[i + 1]));
+                i += 2;
+            }
+            if i < n { results.push(eval_one(x_list[i])); }
             return Ok(results.into_pyobject(py)?.into_any().unbind());
         }
 
-        Err(PyValueError::new_err("Input must be float or list of floats"))
+        Err(PyValueError::new_err("Input must be a float, list of floats, or NumPy array"))
     }
 
     /// String representation of the interpolator
