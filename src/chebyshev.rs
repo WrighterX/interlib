@@ -155,6 +155,7 @@
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
 use std::f64::consts::PI;
+use numpy::{PyArray1, PyReadonlyArray1, PyArrayMethods};
 
 /// Generate Chebyshev nodes of the first kind on interval [a, b]
 /// 
@@ -240,21 +241,37 @@ fn chebyshev_polynomial(n: usize, x: f64) -> f64 {
 fn compute_chebyshev_coefficients(y_values: &[f64]) -> Vec<f64> {
     let n = y_values.len();
     let mut coefficients = vec![0.0; n];
-    
-    for k in 0..n {
-        let mut sum = 0.0;
-        for j in 0..n {
-            let theta = ((2 * j + 1) as f64 * k as f64 * PI) / (2 * n) as f64;
-            sum += y_values[j] * theta.cos();
+
+    // Trig recurrence: cos(k·θⱼ) = 2·cos(θⱼ)·cos((k-1)·θⱼ) - cos((k-2)·θⱼ)
+    // One cos() call per node j instead of one per (j, k) pair.
+    // Outer loop over j so the recurrence state (cos_prev1, cos_prev2) is local.
+    for j in 0..n {
+        let theta_j = (2 * j + 1) as f64 * PI / (2 * n) as f64;
+        let cos_theta = theta_j.cos();
+        let yj = y_values[j];
+
+        let mut cos_prev2 = 1.0;        // cos(0·θⱼ)
+        let mut cos_prev1 = cos_theta;  // cos(1·θⱼ)
+
+        coefficients[0] += yj * cos_prev2;
+        if n > 1 {
+            coefficients[1] += yj * cos_prev1;
         }
-        
-        if k == 0 {
-            coefficients[k] = sum / n as f64;
-        } else {
-            coefficients[k] = 2.0 * sum / n as f64;
+
+        for k in 2..n {
+            let cos_k = 2.0 * cos_theta * cos_prev1 - cos_prev2;
+            coefficients[k] += yj * cos_k;
+            cos_prev2 = cos_prev1;
+            cos_prev1 = cos_k;
         }
     }
-    
+
+    // Normalise: c₀ = (1/n)·Σ, cₖ = (2/n)·Σ  for k > 0
+    coefficients[0] /= n as f64;
+    for ck in coefficients[1..].iter_mut() {
+        *ck *= 2.0 / n as f64;
+    }
+
     coefficients
 }
 
@@ -271,6 +288,7 @@ fn compute_chebyshev_coefficients(y_values: &[f64]) -> Vec<f64> {
 /// # Returns
 /// 
 /// Value of Chebyshev series at x
+#[inline]
 fn chebyshev_evaluate_clenshaw(coefficients: &[f64], x_std: f64) -> f64 {
     let n = coefficients.len();
     
@@ -306,6 +324,7 @@ fn chebyshev_evaluate_clenshaw(coefficients: &[f64], x_std: f64) -> f64 {
 /// # Returns
 /// 
 /// Value of Chebyshev series at x
+#[inline]
 fn chebyshev_evaluate_direct(coefficients: &[f64], x_std: f64) -> f64 {
     let mut result = 0.0;
     
@@ -334,7 +353,6 @@ pub struct ChebyshevInterpolator {
     x_min: f64,
     x_max: f64,
     nodes: Vec<f64>,
-    y_values: Vec<f64>,
     coefficients: Vec<f64>,
     n_points: usize,
     use_clenshaw: bool,
@@ -382,7 +400,6 @@ impl ChebyshevInterpolator {
             x_min,
             x_max,
             nodes,
-            y_values: Vec::new(),
             coefficients: Vec::new(),
             n_points,
             use_clenshaw,
@@ -424,8 +441,7 @@ impl ChebyshevInterpolator {
             ));
         }
         
-        self.y_values = y;
-        self.coefficients = compute_chebyshev_coefficients(&self.y_values);
+        self.coefficients = compute_chebyshev_coefficients(&y);
         self.fitted = true;
         Ok(())
     }
@@ -510,14 +526,14 @@ impl ChebyshevInterpolator {
             ));
         }
 
+        // Single float
         if let Ok(single_x) = x.extract::<f64>() {
             if single_x < self.x_min || single_x > self.x_max {
-                return Err(PyValueError::new_err(
-                    format!("x value {:.4} is outside interpolation range [{:.4}, {:.4}]",
-                            single_x, self.x_min, self.x_max)
-                ));
+                return Err(PyValueError::new_err(format!(
+                    "x value {:.4} is outside interpolation range [{:.4}, {:.4}]",
+                    single_x, self.x_min, self.x_max
+                )));
             }
-            
             let x_std = transform_to_standard(single_x, self.x_min, self.x_max);
             let result = if self.use_clenshaw {
                 chebyshev_evaluate_clenshaw(&self.coefficients, x_std)
@@ -527,33 +543,80 @@ impl ChebyshevInterpolator {
             return Ok(result.into_pyobject(py)?.into_any().unbind());
         }
 
-        if let Ok(x_list) = x.extract::<Vec<f64>>() {
-            let results: Result<Vec<f64>, String> = x_list
-                .iter()
-                .map(|&xi| {
-                    if xi < self.x_min || xi > self.x_max {
-                        Err(format!("x value {:.4} is outside interpolation range [{:.4}, {:.4}]",
-                                   xi, self.x_min, self.x_max))
-                    } else {
-                        let x_std = transform_to_standard(xi, self.x_min, self.x_max);
-                        let result = if self.use_clenshaw {
-                            chebyshev_evaluate_clenshaw(&self.coefficients, x_std)
-                        } else {
-                            chebyshev_evaluate_direct(&self.coefficients, x_std)
-                        };
-                        Ok(result)
-                    }
-                })
-                .collect();
-            
-            match results {
-                Ok(vals) => return Ok(vals.into_pyobject(py)?.into_any().unbind()),
-                Err(e) => return Err(PyValueError::new_err(e)),
+        // NumPy array — zero-copy path, use_clenshaw branch hoisted outside loop
+        if let Ok(arr) = x.extract::<PyReadonlyArray1<f64>>() {
+            let x_slice = arr.as_slice()?;
+            for &xi in x_slice {
+                if xi < self.x_min || xi > self.x_max {
+                    return Err(PyValueError::new_err(format!(
+                        "x value {:.4} is outside interpolation range [{:.4}, {:.4}]",
+                        xi, self.x_min, self.x_max
+                    )));
+                }
             }
+            let result_array = unsafe { PyArray1::<f64>::new(py, [x_slice.len()], false) };
+            let result_slice = unsafe { result_array.as_slice_mut()? };
+            let n = x_slice.len();
+            let mut i = 0;
+            if self.use_clenshaw {
+                while i + 1 < n {
+                    result_slice[i]     = chebyshev_evaluate_clenshaw(&self.coefficients, transform_to_standard(x_slice[i],     self.x_min, self.x_max));
+                    result_slice[i + 1] = chebyshev_evaluate_clenshaw(&self.coefficients, transform_to_standard(x_slice[i + 1], self.x_min, self.x_max));
+                    i += 2;
+                }
+                if i < n {
+                    result_slice[i] = chebyshev_evaluate_clenshaw(&self.coefficients, transform_to_standard(x_slice[i], self.x_min, self.x_max));
+                }
+            } else {
+                while i + 1 < n {
+                    result_slice[i]     = chebyshev_evaluate_direct(&self.coefficients, transform_to_standard(x_slice[i],     self.x_min, self.x_max));
+                    result_slice[i + 1] = chebyshev_evaluate_direct(&self.coefficients, transform_to_standard(x_slice[i + 1], self.x_min, self.x_max));
+                    i += 2;
+                }
+                if i < n {
+                    result_slice[i] = chebyshev_evaluate_direct(&self.coefficients, transform_to_standard(x_slice[i], self.x_min, self.x_max));
+                }
+            }
+            return Ok(result_array.into_any().unbind());
+        }
+
+        // Python list — 2-way unrolling, use_clenshaw branch hoisted
+        if let Ok(x_list) = x.extract::<Vec<f64>>() {
+            for &xi in &x_list {
+                if xi < self.x_min || xi > self.x_max {
+                    return Err(PyValueError::new_err(format!(
+                        "x value {:.4} is outside interpolation range [{:.4}, {:.4}]",
+                        xi, self.x_min, self.x_max
+                    )));
+                }
+            }
+            let n = x_list.len();
+            let mut results = Vec::with_capacity(n);
+            let mut i = 0;
+            if self.use_clenshaw {
+                while i + 1 < n {
+                    results.push(chebyshev_evaluate_clenshaw(&self.coefficients, transform_to_standard(x_list[i],     self.x_min, self.x_max)));
+                    results.push(chebyshev_evaluate_clenshaw(&self.coefficients, transform_to_standard(x_list[i + 1], self.x_min, self.x_max)));
+                    i += 2;
+                }
+                if i < n {
+                    results.push(chebyshev_evaluate_clenshaw(&self.coefficients, transform_to_standard(x_list[i], self.x_min, self.x_max)));
+                }
+            } else {
+                while i + 1 < n {
+                    results.push(chebyshev_evaluate_direct(&self.coefficients, transform_to_standard(x_list[i],     self.x_min, self.x_max)));
+                    results.push(chebyshev_evaluate_direct(&self.coefficients, transform_to_standard(x_list[i + 1], self.x_min, self.x_max)));
+                    i += 2;
+                }
+                if i < n {
+                    results.push(chebyshev_evaluate_direct(&self.coefficients, transform_to_standard(x_list[i], self.x_min, self.x_max)));
+                }
+            }
+            return Ok(results.into_pyobject(py)?.into_any().unbind());
         }
 
         Err(PyValueError::new_err(
-            "Input must be a float or a list of floats"
+            "Input must be a float, list of floats, or NumPy array",
         ))
     }
 
