@@ -65,6 +65,7 @@
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
+use numpy::{PyArray1, PyReadonlyArray1, PyArrayMethods};
 
 /// Precompute the barycentric weights for a given set of nodes.
 ///
@@ -119,6 +120,7 @@ fn compute_barycentric_weights(x_values: &[f64]) -> Vec<f64> {
 /// # Returns
 ///
 /// The interpolated value P(x).
+#[inline]
 fn barycentric_eval(
     x_values: &[f64],
     y_values: &[f64],
@@ -352,32 +354,50 @@ impl LagrangeInterpolator {
         // Single-point evaluation
         if let Ok(single_x) = x.extract::<f64>() {
             let result = barycentric_eval(
-                &self.x_values,
-                &self.y_values,
-                &self.weights,
-                single_x,
+                &self.x_values, &self.y_values, &self.weights, single_x,
             );
             return Ok(result.into_pyobject(py)?.into_any().unbind());
         }
 
-        // Multi-point evaluation
+        // NumPy array — zero-copy path
+        if let Ok(arr) = x.extract::<PyReadonlyArray1<f64>>() {
+            let x_slice = arr.as_slice()?;
+            let result_array = unsafe { PyArray1::<f64>::new(py, [x_slice.len()], false) };
+            let result_slice = unsafe { result_array.as_slice_mut()? };
+            let n = x_slice.len();
+            let mut i = 0;
+
+            // 2-way loop unrolling for batch evaluation
+            while i + 1 < n {
+                result_slice[i]     = barycentric_eval(&self.x_values, &self.y_values, &self.weights, x_slice[i]);
+                result_slice[i + 1] = barycentric_eval(&self.x_values, &self.y_values, &self.weights, x_slice[i + 1]);
+                i += 2;
+            }
+            if i < n {
+                result_slice[i] = barycentric_eval(&self.x_values, &self.y_values, &self.weights, x_slice[i]);
+            }
+            return Ok(result_array.into_any().unbind());
+        }
+
+        // Python list — with 2-way unrolling
         if let Ok(x_list) = x.extract::<Vec<f64>>() {
-            let results: Vec<f64> = x_list
-                .iter()
-                .map(|&xi| {
-                    barycentric_eval(
-                        &self.x_values,
-                        &self.y_values,
-                        &self.weights,
-                        xi,
-                    )
-                })
-                .collect();
+            let n = x_list.len();
+            let mut results = Vec::with_capacity(n);
+            let mut i = 0;
+
+            while i + 1 < n {
+                results.push(barycentric_eval(&self.x_values, &self.y_values, &self.weights, x_list[i]));
+                results.push(barycentric_eval(&self.x_values, &self.y_values, &self.weights, x_list[i + 1]));
+                i += 2;
+            }
+            if i < n {
+                results.push(barycentric_eval(&self.x_values, &self.y_values, &self.weights, x_list[i]));
+            }
             return Ok(results.into_pyobject(py)?.into_any().unbind());
         }
 
         Err(PyValueError::new_err(
-            "Input must be a float or a list of floats",
+            "Input must be a float, list of floats, or NumPy array",
         ))
     }
 
@@ -390,7 +410,7 @@ impl LagrangeInterpolator {
     pub fn __repr__(&self) -> String {
         if self.fitted {
             format!(
-                "LargangeInterpolator(barycentric, fitted with {} points)",
+                "LagrangeInterpolator(barycentric, fitted with {} points)",
                 self.x_values.len()
             )
         } else {
