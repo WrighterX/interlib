@@ -3,12 +3,11 @@ mod newton_core;
 mod quadratic_core;
 mod cubic_spline_core;
 mod hermite_core;
+mod lagrange_core;
 mod ffi;
 mod matlab;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-#[cfg(feature = "python")]
-mod lagrange;
 #[cfg(feature = "python")]
 mod newton;
 #[cfg(feature = "python")]
@@ -19,6 +18,8 @@ mod quadratic;
 mod cubic_spline;
 #[cfg(feature = "python")]
 mod hermite;
+#[cfg(feature = "python")]
+mod lagrange;
 #[cfg(feature = "python")]
 mod least_squares;
 #[cfg(feature = "python")]

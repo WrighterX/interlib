@@ -7,6 +7,7 @@ pub(crate) mod newton;
 pub(crate) mod quadratic;
 pub(crate) mod cubic_spline;
 pub(crate) mod hermite;
+pub(crate) mod lagrange;
 
 thread_local! {
     static LAST_ERROR: RefCell<String> = const { RefCell::new(String::new()) };
