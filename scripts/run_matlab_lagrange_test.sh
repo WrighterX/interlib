@@ -18,7 +18,7 @@ if [[ "$batch_mode" == "1" ]]; then
     -w /work \
     -e INTERLIB_LAGRANGE_LIBRARY="$library_path" \
     "$image" \
-    -batch "addpath('matlab'); addpath('matlab/tests'); test_lagrange"
+    matlab -licmode onlinelicensing -batch "addpath('matlab'); addpath('matlab/tests'); test_lagrange"
 else
   container_name="${container_name:-matlab-login}"
   printf 'Interactive MATLAB workflow selected.\n'

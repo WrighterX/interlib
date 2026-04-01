@@ -68,3 +68,18 @@ via Docker with a MathWorks MATLAB image. For Login Named User licensing, use
 the interactive container workflow documented in the MATLAB note.
 
 See [matlab/MATLAB_DOCKER.md](/home/tret/Code/allcode/rusting_away/uni_diploma/interlib/matlab/MATLAB_DOCKER.md).
+
+## MATLAB Release Notes
+
+GitHub Actions is currently intended to build the standalone Rust MATLAB/FFI
+binaries only. The `.mltbx` toolbox package is built locally from a licensed
+MATLAB runtime.
+
+Use:
+
+```bash
+MATLAB_IMAGE=my-matlab-image:auth make matlab-toolbox-package-batch
+```
+
+That command writes the toolbox to
+[`dist/interlib.mltbx`](/home/tret/Code/allcode/rusting_away/uni_diploma/interlib/dist/interlib.mltbx).

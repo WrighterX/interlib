@@ -54,10 +54,58 @@ All MATLAB wrappers now share one loaded native library alias
 (`interlib_native`) in a session. This is intentional so the load order of
 linear, Newton, quadratic, cubic spline, and future wrappers does not matter.
 
+## Installation Model
+
+This repository currently uses a source-tree development model. That means the
+MATLAB wrapper folder is added to the path directly from the checkout, and the
+Rust crate builds the native library separately.
+
+That is fine for development, but it is not the easiest possible setup for a
+scientist or regular MATLAB user. The long-term packaging target is a MATLAB
+toolbox (`.mltbx`) with a small installer or verification function that checks
+the native library and path setup automatically.
+
+CI currently covers the Rust MATLAB/FFI binaries only. The `.mltbx` package is
+created locally because it still depends on a working MATLAB runtime and
+license.
+
+For now, the simplest local workflow is still:
+
+```matlab
+addpath('/path/to/interlib/matlab')
+```
+
+followed by constructing the interpolator class you need.
+
+If you are using a packaged release or future toolbox build, run:
+
+```matlab
+interlib.verify_installation()
+```
+
+or:
+
+```matlab
+interlib.install()
+```
+
+These entrypoints are meant to confirm that MATLAB can see the package and
+that the native shared library loads before you start using the interpolators.
+
+To create the MATLAB toolbox locally, run:
+
+```bash
+MATLAB_IMAGE=my-matlab-image:auth make matlab-toolbox-package-batch
+```
+
+That command stages the toolbox bundle, runs MATLAB packaging in the container,
+and writes `dist/interlib.mltbx`.
+
 ## Tests and Demos
 
 Smoke tests:
 - `matlab/tests/test_linear.m`
+- `matlab/tests/test_installation.m`
 - `matlab/tests/test_newton.m`
 - `matlab/tests/test_quadratic.m`
 - `matlab/tests/test_cubic_spline.m`
@@ -83,6 +131,7 @@ Plot demos:
 Container helper:
 - `../scripts/start_matlab_container.sh`
 - `../scripts/run_matlab_linear_test.sh`
+- `../scripts/run_matlab_installation_test.sh`
 - `../scripts/run_matlab_newton_test.sh`
 - `../scripts/run_matlab_quadratic_test.sh`
 - `../scripts/run_matlab_cubic_spline_test.sh`
@@ -102,7 +151,7 @@ Recommended workflow for a Login Named User license:
 clear classes
 addpath('/work/matlab')
 addpath('/work/matlab/tests')
-test_linear % or test_newton, test_quadratic, test_cubic_spline, test_hermite, test_lagrange, test_least_squares, test_rbf, test_chebyshev
+test_installation % or test_linear, test_newton, test_quadratic, test_cubic_spline, test_hermite, test_lagrange, test_least_squares, test_rbf, test_chebyshev
 ```
 
 For a plot demo in the same session:

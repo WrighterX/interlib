@@ -18,7 +18,7 @@ if [[ "$batch_mode" == "1" ]]; then
     -w /work \
     -e INTERLIB_CUBIC_SPLINE_LIBRARY="$library_path" \
     "$image" \
-    -batch "addpath('matlab'); addpath('matlab/tests'); test_cubic_spline"
+    matlab -licmode onlinelicensing -batch "addpath('matlab'); addpath('matlab/tests'); test_cubic_spline"
 else
   container_name="${container_name:-matlab-login}"
   printf 'Interactive MATLAB workflow selected.\n'
