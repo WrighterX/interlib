@@ -1,4 +1,4 @@
-.PHONY: matlab-build matlab-session matlab-test matlab-test-batch matlab-test-newton matlab-test-newton-batch matlab-test-quadratic matlab-test-quadratic-batch matlab-test-cubic-spline matlab-test-cubic-spline-batch
+.PHONY: matlab-build matlab-session matlab-test matlab-test-batch matlab-test-newton matlab-test-newton-batch matlab-test-quadratic matlab-test-quadratic-batch matlab-test-cubic-spline matlab-test-cubic-spline-batch matlab-test-rbf matlab-test-rbf-batch
 
 matlab-build:
 	CARGO_TARGET_DIR="$(CURDIR)/target/matlab" cargo build --lib --no-default-features --features ffi
@@ -35,6 +35,12 @@ matlab-test-least-squares: matlab-build
 
 matlab-test-least-squares-batch: matlab-build
 	MATLAB_BATCH=1 bash ./scripts/run_matlab_least_squares_test.sh
+
+matlab-test-rbf: matlab-build
+	MATLAB_CONTAINER=$${MATLAB_CONTAINER:-matlab-login} bash ./scripts/run_matlab_rbf_test.sh
+
+matlab-test-rbf-batch: matlab-build
+	MATLAB_BATCH=1 bash ./scripts/run_matlab_rbf_test.sh
 
 matlab-test-quadratic: matlab-build
 	MATLAB_CONTAINER=$${MATLAB_CONTAINER:-matlab-login} bash ./scripts/run_matlab_quadratic_test.sh

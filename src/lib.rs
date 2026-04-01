@@ -5,6 +5,7 @@ mod cubic_spline_core;
 mod hermite_core;
 mod lagrange_core;
 mod least_squares_core;
+mod rbf_core;
 mod ffi;
 mod matlab;
 #[cfg(feature = "python")]

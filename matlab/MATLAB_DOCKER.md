@@ -61,6 +61,9 @@ For Hermite run `make matlab-test-hermite` (interactive) or
 For Lagrange run `make matlab-test-lagrange` (interactive) or
 `make matlab-test-lagrange-batch` when your license allows unattended runs.
 
+For RBF run `make matlab-test-rbf` (interactive) or
+`make matlab-test-rbf-batch` once the container workflow is ready for headless automation.
+
 Only use `matlab-test-batch` if your license setup supports non-interactive
 batch launches without prompting again.
 

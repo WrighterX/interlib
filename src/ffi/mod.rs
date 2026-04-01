@@ -9,6 +9,7 @@ pub(crate) mod cubic_spline;
 pub(crate) mod hermite;
 pub(crate) mod lagrange;
 pub(crate) mod least_squares;
+pub(crate) mod rbf;
 
 thread_local! {
     static LAST_ERROR: RefCell<String> = const { RefCell::new(String::new()) };
