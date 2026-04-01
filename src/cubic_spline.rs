@@ -24,7 +24,7 @@
 /// - **Industry standard**: Used in CAD, graphics, data analysis
 /// - **Complexity**: O(n) computation via tridiagonal solver, O(log n) evaluation
 /// 
-/// # Advantages
+/// # Advantages over Linear
 /// 
 /// - Smooth, visually pleasing curves
 /// - Stable numerical properties
@@ -58,154 +58,10 @@
 /// # Evaluate
 /// result = spline(2.5)
 /// ```
-
+use crate::cubic_spline_core::CubicSplineCore;
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
 use numpy::{PyArray1, PyReadonlyArray1, PyArrayMethods};
-
-/// Cubic spline segment representation
-/// 
-/// Represents one cubic polynomial segment: a + b(x-xᵢ) + c(x-xᵢ)² + d(x-xᵢ)³
-#[derive(Clone, Debug)]
-struct SplineSegment {
-    a: f64, // Constant term (function value at left endpoint)
-    b: f64, // Linear coefficient (related to first derivative)
-    c: f64, // Quadratic coefficient (related to second derivative)
-    d: f64, // Cubic coefficient
-    x: f64, // Left endpoint of segment
-}
-
-impl SplineSegment {
-    /// Evaluate the cubic spline segment at a point
-    /// 
-    /// # Arguments
-    /// 
-    /// * `x_val` - Point at which to evaluate (should be in segment range)
-    /// 
-    /// # Returns
-    /// 
-    /// The value of the cubic polynomial at x_val
-    #[inline]
-    fn eval(&self, x_val: f64) -> f64 {
-        let dx = x_val - self.x;
-        self.a + self.b * dx + self.c * dx * dx + self.d * dx * dx * dx
-    }
-}
-
-/// Solve tridiagonal linear system using Thomas algorithm
-/// 
-/// Efficiently solves a tridiagonal system Ax = d where A has:
-/// - Main diagonal: b[i]
-/// - Lower diagonal: a[i]
-/// - Upper diagonal: c[i]
-/// 
-/// # Arguments
-/// 
-/// * `a` - Lower diagonal (not used for first equation)
-/// * `b` - Main diagonal
-/// * `c` - Upper diagonal (not used for last equation)
-/// * `d` - Right-hand side
-/// 
-/// # Returns
-/// 
-/// Solution vector x
-/// 
-/// # Algorithm
-/// 
-/// Thomas algorithm (specialized Gaussian elimination for tridiagonal systems):
-/// - Time complexity: O(n)
-/// - Space complexity: O(n)
-/// - More efficient than general Gaussian elimination O(n³)
-fn solve_tridiagonal(a: &[f64], b: &[f64], c: &[f64], d: &[f64]) -> Vec<f64> {
-    let n = b.len();
-    if n == 0 { return vec![]; }
-    let mut c_prime = vec![0.0; n];
-    let mut d_prime = vec![0.0; n];
-    let mut x = vec![0.0; n];
-
-    c_prime[0] = c[0] / b[0];
-    d_prime[0] = d[0] / b[0];
-
-    for i in 1..n {
-        let m = 1.0 / (b[i] - a[i] * c_prime[i - 1]);
-        if i < n - 1 { c_prime[i] = c[i] * m; }
-        d_prime[i] = (d[i] - a[i] * d_prime[i - 1]) * m;
-    }
-
-    x[n - 1] = d_prime[n - 1];
-    for i in (0..n - 1).rev() {
-        x[i] = d_prime[i] - c_prime[i] * x[i + 1];
-    }
-    x
-}
-
-/// Compute natural cubic spline coefficients
-/// 
-/// Constructs a natural cubic spline through the given data points.
-/// Natural boundary conditions: S''(x₀) = S''(xₙ) = 0
-/// 
-/// # Arguments
-/// 
-/// * `x_values` - X coordinates of data points (must be sorted)
-/// * `y_values` - Y coordinates of data points
-/// 
-/// # Returns
-/// 
-/// Vector of SplineSegment structs, one for each interval
-fn compute_not_a_knot_spline(x: &[f64], y: &[f64]) -> Vec<SplineSegment> {
-    let n = x.len();
-    let mut h = vec![0.0; n - 1];
-    let mut delta = vec![0.0; n - 1];
-    for i in 0..n - 1 {
-        h[i] = x[i + 1] - x[i];
-        delta[i] = (y[i + 1] - y[i]) / h[i];
-    }
-
-    let mut c_coeffs = vec![0.0; n];
-    if n >= 4 {
-        let m = n - 2; 
-        let mut a_sys = vec![0.0; m];
-        let mut b_sys = vec![0.0; m];
-        let mut c_sys = vec![0.0; m];
-        let mut rhs = vec![0.0; m];
-
-        for i in 1..m-1 {
-            let k = i + 1;
-            a_sys[i] = h[k - 1];
-            b_sys[i] = 2.0 * (h[k - 1] + h[k]);
-            c_sys[i] = h[k];
-            rhs[i] = 3.0 * (delta[k] - delta[k - 1]);
-        }
-
-        // Left Not-a-Knot Boundary
-        b_sys[0] = (3.0 * h[0] * h[1] + 2.0 * h[1] * h[1] + h[0] * h[0]) / h[1];
-        c_sys[0] = (h[1] * h[1] - h[0] * h[0]) / h[1];
-        rhs[0] = 3.0 * (delta[1] - delta[0]);
-
-        // Right Not-a-Knot Boundary
-        let hn2 = h[n - 3]; let hn1 = h[n - 2];
-        a_sys[m - 1] = (hn2 * hn2 - hn1 * hn1) / hn2;
-        b_sys[m - 1] = (3.0 * hn2 * hn1 + 2.0 * hn2 * hn2 + hn1 * hn1) / hn2;
-        rhs[m - 1] = 3.0 * (delta[n - 2] - delta[n - 3]);
-
-        let inner_c = solve_tridiagonal(&a_sys, &b_sys, &c_sys, &rhs);
-        for i in 0..m { c_coeffs[i + 1] = inner_c[i]; }
-        c_coeffs[0] = ((h[0] + h[1]) * c_coeffs[1] - h[0] * c_coeffs[2]) / h[1];
-        c_coeffs[n - 1] = ((h[n-2] + h[n-3]) * c_coeffs[n - 2] - h[n-2] * c_coeffs[n - 3]) / h[n-3];
-    }
-
-    let mut segments = Vec::new();
-    for i in 0..n - 1 {
-        segments.push(SplineSegment {
-            a: y[i],
-            b: delta[i] - h[i] * (2.0 * c_coeffs[i] + c_coeffs[i + 1]) / 3.0,
-            c: c_coeffs[i],
-            d: (c_coeffs[i + 1] - c_coeffs[i]) / (3.0 * h[i]),
-            x: x[i],
-        });
-    }
-    segments
-}
 
 /// Natural Cubic Spline Interpolator
 /// 
@@ -219,9 +75,7 @@ fn compute_not_a_knot_spline(x: &[f64], y: &[f64]) -> Vec<SplineSegment> {
 /// * `fitted` - Whether the interpolator has been fitted
 #[pyclass]
 pub struct CubicSplineInterpolator {
-    x_values: Vec<f64>,
-    segments: Vec<SplineSegment>,
-    fitted: bool,
+    core: CubicSplineCore,
 }
 
 #[pymethods]
@@ -235,9 +89,7 @@ impl CubicSplineInterpolator {
     #[new]
     pub fn new() -> Self {
         CubicSplineInterpolator {
-            x_values: Vec::new(),
-            segments: Vec::new(),
-            fitted: false,
+            core: CubicSplineCore::new(),
         }
     }
 
@@ -265,37 +117,7 @@ impl CubicSplineInterpolator {
     /// The spline segments are computed using the Thomas algorithm to solve
     /// the tridiagonal system for second derivatives, which is O(n) efficient.
     pub fn fit(&mut self, x: Vec<f64>, y: Vec<f64>) -> PyResult<()> {
-        if x.len() != y.len() {
-            return Err(PyValueError::new_err(
-                "x and y must have the same length"
-            ));
-        }
-        if x.len() < 2 {
-            return Err(PyValueError::new_err(
-                "Cubic spline interpolation requires at least 2 data points"
-            ));
-        }
-        
-        // Check if x values are sorted
-        for i in 0..x.len() - 1 {
-            if x[i] >= x[i + 1] {
-                return Err(PyValueError::new_err(
-                    "x values must be strictly increasing"
-                ));
-            }
-        }
-        
-        self.x_values = x;
-        self.segments = compute_not_a_knot_spline(&self.x_values, &y);
-        
-        if self.segments.is_empty() {
-            return Err(PyValueError::new_err(
-                "Failed to compute spline coefficients"
-            ));
-        }
-        
-        self.fitted = true;
-        Ok(())
+        self.core.fit(x, y).map_err(PyValueError::new_err)
     }
 
     /// Get the number of spline segments
@@ -310,12 +132,7 @@ impl CubicSplineInterpolator {
     /// ValueError
     ///     If the interpolator has not been fitted
     pub fn num_segments(&self) -> PyResult<usize> {
-        if !self.fitted {
-            return Err(PyValueError::new_err(
-                "Interpolator not fitted. Call fit(x, y) first."
-            ));
-        }
-        Ok(self.segments.len())
+        self.core.num_segments().map_err(PyValueError::new_err)
     }
 
     /// Evaluate the interpolation at one or more points
@@ -341,25 +158,9 @@ impl CubicSplineInterpolator {
     /// For points outside the data range, the edge segments are used
     /// for extrapolation (linear extrapolation from the edge cubic).
     pub fn __call__(&self, py: Python<'_>, x: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
-        if !self.fitted {
-            return Err(PyValueError::new_err("Interpolator not fitted."));
-        }
-
-        let n = self.x_values.len();
-        let eval_one = |val: f64| -> f64 {
-            if val <= self.x_values[0] { return self.segments[0].eval(val); }
-            if val >= self.x_values[n - 1] { return self.segments[n - 2].eval(val); }
-            
-            let idx = match self.x_values.binary_search_by(|v| v.partial_cmp(&val).unwrap()) {
-                Ok(i) => if i == n - 1 { i - 1 } else { i },
-                Err(i) => if i > 0 { i - 1 } else { 0 },
-            };
-            self.segments[idx].eval(val)
-        };
-
         // Handle single float input
         if let Ok(single_x) = x.extract::<f64>() {
-            let res = eval_one(single_x);
+            let res = self.core.evaluate_single(single_x).map_err(PyValueError::new_err)?;
             return Ok(res.into_pyobject(py)?.into_any().unbind());
         }
 
@@ -368,28 +169,16 @@ impl CubicSplineInterpolator {
             let x_slice = arr.as_slice()?;
             let n = x_slice.len();
             let result_array = unsafe { PyArray1::<f64>::new(py, [n], false) };
-            let result_slice = unsafe { result_array.as_slice_mut()? };
-            let mut i = 0;
-            while i + 1 < n {
-                result_slice[i]     = eval_one(x_slice[i]);
-                result_slice[i + 1] = eval_one(x_slice[i + 1]);
-                i += 2;
+            {
+                let result_slice = unsafe { result_array.as_slice_mut()? };
+                self.core.fill_many(x_slice, result_slice).map_err(PyValueError::new_err)?;
             }
-            if i < n { result_slice[i] = eval_one(x_slice[i]); }
             return Ok(result_array.into_any().unbind());
         }
 
         // Handle list of floats input
         if let Ok(x_list) = x.extract::<Vec<f64>>() {
-            let n = x_list.len();
-            let mut results = Vec::with_capacity(n);
-            let mut i = 0;
-            while i + 1 < n {
-                results.push(eval_one(x_list[i]));
-                results.push(eval_one(x_list[i + 1]));
-                i += 2;
-            }
-            if i < n { results.push(eval_one(x_list[i])); }
+            let results = self.core.evaluate_many(&x_list).map_err(PyValueError::new_err)?;
             return Ok(results.into_pyobject(py)?.into_any().unbind());
         }
 
@@ -403,16 +192,6 @@ impl CubicSplineInterpolator {
     /// str
     ///     Description of the interpolator state including number of segments
     pub fn __repr__(&self) -> String {
-        if self.fitted {
-            format!(
-                "CubicSplineInterpolator(fitted with {} points, {} segments, x range: [{:.2}, {:.2}])",
-                self.x_values.len(),
-                self.segments.len(),
-                self.x_values.first().unwrap_or(&0.0),
-                self.x_values.last().unwrap_or(&0.0)
-            )
-        } else {
-            "CubicSplineInterpolator(not fitted)".to_string()
-        }
+        self.core.repr()
     }
 }

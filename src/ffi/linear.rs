@@ -130,6 +130,25 @@ pub extern "C" fn interlib_linear_last_error(buffer: *mut c_char, buffer_len: us
     write_last_error(&message, buffer, buffer_len)
 }
 
+// Keep the linear entry points reachable in the cdylib so the linker
+// does not discard them from the MATLAB-targeted shared library.
+#[used]
+static KEEP_LINEAR_CREATE: extern "C" fn() -> *mut c_void = interlib_linear_create;
+#[used]
+static KEEP_LINEAR_DESTROY: extern "C" fn(*mut c_void) = interlib_linear_destroy;
+#[used]
+static KEEP_LINEAR_FIT: extern "C" fn(*mut c_void, *const f64, usize, *const f64, usize) -> i32 =
+    interlib_linear_fit;
+#[used]
+static KEEP_LINEAR_EVAL: extern "C" fn(*mut c_void, f64, *mut f64) -> i32 =
+    interlib_linear_eval;
+#[used]
+static KEEP_LINEAR_EVAL_MANY: extern "C" fn(*mut c_void, *const f64, usize, *mut f64) -> i32 =
+    interlib_linear_eval_many;
+#[used]
+static KEEP_LINEAR_LAST_ERROR: extern "C" fn(*mut c_char, usize) -> usize =
+    interlib_linear_last_error;
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -21,6 +21,20 @@ interp.fit([0; 1; 2], [0; 1; 4]);
 y = interp(0.5);
 ```
 
+### Quadratic Interpolation
+```matlab
+interp = interlib.QuadraticInterpolator();
+interp.fit([0; 1; 2; 3], [0; 1; 4; 9]);
+y = interp(0.5);
+```
+
+### Cubic Spline Interpolation
+```matlab
+interp = interlib.CubicSplineInterpolator();
+interp.fit([0; 1; 2; 3], [0; 1; 4; 9]);
+y = interp(0.5);
+```
+
 ## Library Loading
 
 By default the wrappers look for the standalone MATLAB/FFI build in
@@ -29,21 +43,27 @@ By default the wrappers look for the standalone MATLAB/FFI build in
 with environment variables:
 - `INTERLIB_LINEAR_LIBRARY`
 - `INTERLIB_NEWTON_LIBRARY`
+- `INTERLIB_QUADRATIC_LIBRARY`
+- `INTERLIB_CUBIC_SPLINE_LIBRARY`
 - `INTERLIB_NATIVE_LIBRARY`
 
 All MATLAB wrappers now share one loaded native library alias
 (`interlib_native`) in a session. This is intentional so the load order of
-linear, Newton, and future wrappers does not matter.
+linear, Newton, quadratic, cubic spline, and future wrappers does not matter.
 
 ## Tests and Demos
 
 Smoke tests:
 - `matlab/tests/test_linear.m`
 - `matlab/tests/test_newton.m`
+- `matlab/tests/test_quadratic.m`
+- `matlab/tests/test_cubic_spline.m`
 
 Plot demos:
 - `matlab/examples/plot_linear_demo.m`
 - `matlab/examples/plot_newton_demo.m`
+- `matlab/examples/plot_quadratic_demo.m`
+- `matlab/examples/plot_cubic_spline_demo.m`
 
 ## Container Workflow
 
@@ -51,18 +71,20 @@ Container helper:
 - `../scripts/start_matlab_container.sh`
 - `../scripts/run_matlab_linear_test.sh`
 - `../scripts/run_matlab_newton_test.sh`
+- `../scripts/run_matlab_quadratic_test.sh`
+- `../scripts/run_matlab_cubic_spline_test.sh`
 
 Recommended workflow for a Login Named User license:
 
 1. Run `make matlab-session`
-2. In another terminal run `make matlab-test` (Linear) or `make matlab-test-newton` (Newton)
+2. In another terminal run `make matlab-test` (Linear), `make matlab-test-newton` (Newton), etc.
 3. In the MATLAB prompt run:
 
 ```matlab
 clear classes
 addpath('/work/matlab')
 addpath('/work/matlab/tests')
-test_linear % or test_newton
+test_linear % or test_newton, test_quadratic, test_cubic_spline
 ```
 
 For a plot demo in the same session:
@@ -71,7 +93,7 @@ For a plot demo in the same session:
 clear classes
 addpath('/work/matlab')
 addpath('/work/matlab/examples')
-plot_linear_demo % or plot_newton_demo
+plot_linear_demo % or plot_newton_demo, plot_quadratic_demo, plot_cubic_spline_demo
 ```
 
 In a headless Docker container, the demo saves a PNG to
