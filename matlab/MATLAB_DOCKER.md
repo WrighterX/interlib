@@ -55,6 +55,9 @@ Batch mode:
 MATLAB_IMAGE=mathworks/matlab:r2025b make matlab-test-batch
 ```
 
+For Hermite run `make matlab-test-hermite` (interactive) or
+`make matlab-test-hermite-batch` when your license allows unattended runs.
+
 Only use `matlab-test-batch` if your license setup supports non-interactive
 batch launches without prompting again.
 

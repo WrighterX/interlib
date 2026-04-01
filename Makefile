@@ -18,6 +18,12 @@ matlab-test-newton: matlab-build
 matlab-test-newton-batch: matlab-build
 	MATLAB_BATCH=1 bash ./scripts/run_matlab_newton_test.sh
 
+matlab-test-hermite: matlab-build
+	MATLAB_CONTAINER=$${MATLAB_CONTAINER:-matlab-login} bash ./scripts/run_matlab_hermite_test.sh
+
+matlab-test-hermite-batch: matlab-build
+	MATLAB_BATCH=1 bash ./scripts/run_matlab_hermite_test.sh
+
 matlab-test-quadratic: matlab-build
 	MATLAB_CONTAINER=$${MATLAB_CONTAINER:-matlab-login} bash ./scripts/run_matlab_quadratic_test.sh
 

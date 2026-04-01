@@ -46,6 +46,21 @@ int interlib_cubic_spline_eval(void* handle, double x, double* out_value);
 int interlib_cubic_spline_eval_many(void* handle, const double* x_ptr, size_t x_len, double* out_ptr);
 size_t interlib_cubic_spline_last_error(char* buffer, size_t buffer_len);
 
+void* interlib_hermite_create(void);
+void interlib_hermite_destroy(void* handle);
+int interlib_hermite_fit(
+    void* handle,
+    const double* x_ptr,
+    size_t x_len,
+    const double* y_ptr,
+    size_t y_len,
+    const double* dy_ptr,
+    size_t dy_len
+);
+int interlib_hermite_eval(void* handle, double x, double* out_value);
+int interlib_hermite_eval_many(void* handle, const double* x_ptr, size_t x_len, double* out_ptr);
+size_t interlib_hermite_last_error(char* buffer, size_t buffer_len);
+
 #ifdef __cplusplus
 }
 #endif

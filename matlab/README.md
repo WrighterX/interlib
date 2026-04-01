@@ -45,6 +45,7 @@ with environment variables:
 - `INTERLIB_NEWTON_LIBRARY`
 - `INTERLIB_QUADRATIC_LIBRARY`
 - `INTERLIB_CUBIC_SPLINE_LIBRARY`
+- `INTERLIB_HERMITE_LIBRARY`
 - `INTERLIB_NATIVE_LIBRARY`
 
 All MATLAB wrappers now share one loaded native library alias
@@ -58,12 +59,14 @@ Smoke tests:
 - `matlab/tests/test_newton.m`
 - `matlab/tests/test_quadratic.m`
 - `matlab/tests/test_cubic_spline.m`
+- `matlab/tests/test_hermite.m`
 
 Plot demos:
 - `matlab/examples/plot_linear_demo.m`
 - `matlab/examples/plot_newton_demo.m`
 - `matlab/examples/plot_quadratic_demo.m`
 - `matlab/examples/plot_cubic_spline_demo.m`
+- `matlab/examples/plot_hermite_demo.m`
 
 ## Container Workflow
 
@@ -73,6 +76,7 @@ Container helper:
 - `../scripts/run_matlab_newton_test.sh`
 - `../scripts/run_matlab_quadratic_test.sh`
 - `../scripts/run_matlab_cubic_spline_test.sh`
+- `../scripts/run_matlab_hermite_test.sh`
 
 Recommended workflow for a Login Named User license:
 
@@ -84,7 +88,7 @@ Recommended workflow for a Login Named User license:
 clear classes
 addpath('/work/matlab')
 addpath('/work/matlab/tests')
-test_linear % or test_newton, test_quadratic, test_cubic_spline
+test_linear % or test_newton, test_quadratic, test_cubic_spline, test_hermite
 ```
 
 For a plot demo in the same session:
@@ -93,7 +97,7 @@ For a plot demo in the same session:
 clear classes
 addpath('/work/matlab')
 addpath('/work/matlab/examples')
-plot_linear_demo % or plot_newton_demo, plot_quadratic_demo, plot_cubic_spline_demo
+plot_linear_demo % or plot_newton_demo, plot_quadratic_demo, plot_cubic_spline_demo, plot_hermite_demo
 ```
 
 In a headless Docker container, the demo saves a PNG to

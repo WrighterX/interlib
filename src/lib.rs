@@ -2,6 +2,7 @@ mod linear_core;
 mod newton_core;
 mod quadratic_core;
 mod cubic_spline_core;
+mod hermite_core;
 mod ffi;
 mod matlab;
 #[cfg(feature = "python")]
