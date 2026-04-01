@@ -78,11 +78,7 @@ pub extern "C" fn interlib_rbf_fit(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn interlib_rbf_eval(
-    handle: *mut c_void,
-    x: f64,
-    out_value: *mut f64,
-) -> i32 {
+pub extern "C" fn interlib_rbf_eval(handle: *mut c_void, x: f64, out_value: *mut f64) -> i32 {
     let core = match core_from_handle(handle) {
         Ok(core) => core,
         Err(message) => return fail(message),

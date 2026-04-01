@@ -1,21 +1,18 @@
-mod linear_core;
-mod newton_core;
-mod quadratic_core;
+mod chebyshev_core;
 mod cubic_spline_core;
+mod ffi;
 mod hermite_core;
 mod lagrange_core;
 mod least_squares_core;
-mod rbf_core;
-mod ffi;
+mod linear_core;
 mod matlab;
+mod newton_core;
+mod quadratic_core;
+mod rbf_core;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 #[cfg(feature = "python")]
-mod newton;
-#[cfg(feature = "python")]
-mod linear;
-#[cfg(feature = "python")]
-mod quadratic;
+mod chebyshev;
 #[cfg(feature = "python")]
 mod cubic_spline;
 #[cfg(feature = "python")]
@@ -27,9 +24,13 @@ mod least_squares;
 #[cfg(feature = "python")]
 mod least_squares;
 #[cfg(feature = "python")]
-mod rbf;
+mod linear;
 #[cfg(feature = "python")]
-mod chebyshev;
+mod newton;
+#[cfg(feature = "python")]
+mod quadratic;
+#[cfg(feature = "python")]
+mod rbf;
 
 /// A high-performance Python interpolation library implemented in Rust.
 ///

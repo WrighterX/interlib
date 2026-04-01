@@ -198,7 +198,10 @@ impl LeastSquaresCore {
                 ),
             }
         } else {
-            format!("LeastSquaresInterpolator(degree={}, not fitted)", self.degree)
+            format!(
+                "LeastSquaresInterpolator(degree={}, not fitted)",
+                self.degree
+            )
         }
     }
 }

@@ -1,8 +1,8 @@
 use std::ffi::c_void;
 use std::os::raw::c_char;
 
-use crate::hermite_core::HermiteCore;
 use crate::ffi::{clear_last_error, fail, last_error_string, success, write_last_error};
+use crate::hermite_core::HermiteCore;
 
 fn core_from_handle(handle: *mut c_void) -> Result<*mut HermiteCore, &'static str> {
     if handle.is_null() {
@@ -63,11 +63,7 @@ pub extern "C" fn interlib_hermite_fit(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn interlib_hermite_eval(
-    handle: *mut c_void,
-    x: f64,
-    out_value: *mut f64,
-) -> i32 {
+pub extern "C" fn interlib_hermite_eval(handle: *mut c_void, x: f64, out_value: *mut f64) -> i32 {
     let core = match core_from_handle(handle) {
         Ok(core) => core,
         Err(message) => return fail(message),

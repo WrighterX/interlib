@@ -2,7 +2,7 @@ use std::ffi::c_void;
 use std::os::raw::c_char;
 
 use crate::cubic_spline_core::CubicSplineCore;
-use crate::ffi::{clear_last_error, fail, success, last_error_string, write_last_error};
+use crate::ffi::{clear_last_error, fail, last_error_string, success, write_last_error};
 
 fn core_from_handle(handle: *mut c_void) -> Result<*mut CubicSplineCore, &'static str> {
     if handle.is_null() {
@@ -125,7 +125,10 @@ pub extern "C" fn interlib_cubic_spline_eval_many(
 /// Returns the number of bytes required including the trailing nul byte.
 /// DEPRECATED: Use interlib_last_error instead.
 #[unsafe(no_mangle)]
-pub extern "C" fn interlib_cubic_spline_last_error(buffer: *mut c_char, buffer_len: usize) -> usize {
+pub extern "C" fn interlib_cubic_spline_last_error(
+    buffer: *mut c_char,
+    buffer_len: usize,
+) -> usize {
     let message = last_error_string();
     write_last_error(&message, buffer, buffer_len)
 }
@@ -137,8 +140,13 @@ static KEEP_CUBIC_SPLINE_CREATE: extern "C" fn() -> *mut c_void = interlib_cubic
 #[used]
 static KEEP_CUBIC_SPLINE_DESTROY: extern "C" fn(*mut c_void) = interlib_cubic_spline_destroy;
 #[used]
-static KEEP_CUBIC_SPLINE_FIT: extern "C" fn(*mut c_void, *const f64, usize, *const f64, usize) -> i32 =
-    interlib_cubic_spline_fit;
+static KEEP_CUBIC_SPLINE_FIT: extern "C" fn(
+    *mut c_void,
+    *const f64,
+    usize,
+    *const f64,
+    usize,
+) -> i32 = interlib_cubic_spline_fit;
 #[used]
 static KEEP_CUBIC_SPLINE_EVAL: extern "C" fn(*mut c_void, f64, *mut f64) -> i32 =
     interlib_cubic_spline_eval;

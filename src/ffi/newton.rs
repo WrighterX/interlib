@@ -1,8 +1,8 @@
 use std::ffi::c_void;
 use std::os::raw::c_char;
 
+use crate::ffi::{clear_last_error, fail, last_error_string, success, write_last_error};
 use crate::newton_core::NewtonCore;
-use crate::ffi::{clear_last_error, fail, success, last_error_string, write_last_error};
 
 fn core_from_handle(handle: *mut c_void) -> Result<*mut NewtonCore, &'static str> {
     if handle.is_null() {
@@ -65,11 +65,7 @@ pub extern "C" fn interlib_newton_fit(
 
 /// Evaluate the newton interpolator at a single point.
 #[unsafe(no_mangle)]
-pub extern "C" fn interlib_newton_eval(
-    handle: *mut c_void,
-    x: f64,
-    out_value: *mut f64,
-) -> i32 {
+pub extern "C" fn interlib_newton_eval(handle: *mut c_void, x: f64, out_value: *mut f64) -> i32 {
     let core = match core_from_handle(handle) {
         Ok(core) => core,
         Err(message) => return fail(message),

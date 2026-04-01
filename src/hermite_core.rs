@@ -33,11 +33,8 @@ impl HermiteCore {
         self.y_values = y;
         self.dy_values = dy;
 
-        let (z, coef) = hermite_divided_differences(
-            &self.x_values,
-            &self.y_values,
-            &self.dy_values,
-        );
+        let (z, coef) =
+            hermite_divided_differences(&self.x_values, &self.y_values, &self.dy_values);
 
         self.z_values = z;
         self.coefficients = coef;

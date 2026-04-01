@@ -2,13 +2,14 @@ use std::cell::RefCell;
 use std::os::raw::c_char;
 use std::ptr;
 
-pub(crate) mod linear;
-pub(crate) mod newton;
-pub(crate) mod quadratic;
+pub(crate) mod chebyshev;
 pub(crate) mod cubic_spline;
 pub(crate) mod hermite;
 pub(crate) mod lagrange;
 pub(crate) mod least_squares;
+pub(crate) mod linear;
+pub(crate) mod newton;
+pub(crate) mod quadratic;
 pub(crate) mod rbf;
 
 thread_local! {

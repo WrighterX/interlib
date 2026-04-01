@@ -1,8 +1,8 @@
 use std::ffi::c_void;
 use std::os::raw::c_char;
 
-use crate::least_squares_core::LeastSquaresCore;
 use crate::ffi::{clear_last_error, fail, last_error_string, success, write_last_error};
+use crate::least_squares_core::LeastSquaresCore;
 
 fn core_from_handle(handle: *mut c_void) -> Result<*mut LeastSquaresCore, &'static str> {
     if handle.is_null() {
@@ -74,7 +74,9 @@ pub extern "C" fn interlib_least_squares_eval(
     let core = unsafe { &mut *core };
     match core.evaluate_single(x) {
         Ok(value) => {
-            unsafe { *out_value = value; }
+            unsafe {
+                *out_value = value;
+            }
             success()
         }
         Err(message) => fail(message),
@@ -109,7 +111,10 @@ pub extern "C" fn interlib_least_squares_eval_many(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn interlib_least_squares_last_error(buffer: *mut c_char, buffer_len: usize) -> usize {
+pub extern "C" fn interlib_least_squares_last_error(
+    buffer: *mut c_char,
+    buffer_len: usize,
+) -> usize {
     let message = last_error_string();
     write_last_error(&message, buffer, buffer_len)
 }

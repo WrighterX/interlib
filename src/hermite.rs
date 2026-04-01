@@ -5,9 +5,8 @@
 ///
 /// The interpolation is computed using divided differences with doubled points
 /// and is exposed to Python via PyO3.
-
 use crate::hermite_core::HermiteCore;
-use numpy::{PyArray1, PyReadonlyArray1, PyArrayMethods};
+use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -36,7 +35,10 @@ impl HermiteInterpolator {
 
     pub fn __call__(&self, py: Python<'_>, x: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         if let Ok(single_x) = x.extract::<f64>() {
-            let result = self.core.evaluate_single(single_x).map_err(PyValueError::new_err)?;
+            let result = self
+                .core
+                .evaluate_single(single_x)
+                .map_err(PyValueError::new_err)?;
             return Ok(result.into_pyobject(py)?.into_any().unbind());
         }
 
@@ -53,7 +55,10 @@ impl HermiteInterpolator {
         }
 
         if let Ok(x_list) = x.extract::<Vec<f64>>() {
-            let results = self.core.evaluate_many(&x_list).map_err(PyValueError::new_err)?;
+            let results = self
+                .core
+                .evaluate_many(&x_list)
+                .map_err(PyValueError::new_err)?;
             return Ok(results.into_pyobject(py)?.into_any().unbind());
         }
 

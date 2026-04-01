@@ -1,8 +1,8 @@
 use std::ffi::c_void;
 use std::os::raw::c_char;
 
-use crate::lagrange_core::LagrangeCore;
 use crate::ffi::{clear_last_error, fail, last_error_string, success, write_last_error};
+use crate::lagrange_core::LagrangeCore;
 
 fn core_from_handle(handle: *mut c_void) -> Result<*mut LagrangeCore, &'static str> {
     if handle.is_null() {
@@ -84,11 +84,7 @@ pub extern "C" fn interlib_lagrange_update_y(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn interlib_lagrange_add_point(
-    handle: *mut c_void,
-    x: f64,
-    y: f64,
-) -> i32 {
+pub extern "C" fn interlib_lagrange_add_point(handle: *mut c_void, x: f64, y: f64) -> i32 {
     let core = match core_from_handle(handle) {
         Ok(core) => core,
         Err(message) => return fail(message),
@@ -101,11 +97,7 @@ pub extern "C" fn interlib_lagrange_add_point(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn interlib_lagrange_eval(
-    handle: *mut c_void,
-    x: f64,
-    out_value: *mut f64,
-) -> i32 {
+pub extern "C" fn interlib_lagrange_eval(handle: *mut c_void, x: f64, out_value: *mut f64) -> i32 {
     let core = match core_from_handle(handle) {
         Ok(core) => core,
         Err(message) => return fail(message),

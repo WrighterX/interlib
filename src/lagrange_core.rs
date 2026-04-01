@@ -72,7 +72,12 @@ impl LagrangeCore {
         if !self.fitted {
             return Err("Interpolator not fitted. Call fit(x, y) first.".into());
         }
-        Ok(barycentric_eval(&self.x_values, &self.y_values, &self.weights, x))
+        Ok(barycentric_eval(
+            &self.x_values,
+            &self.y_values,
+            &self.weights,
+            x,
+        ))
     }
 
     pub(crate) fn fill_many(&self, xs: &[f64], out: &mut [f64]) -> Result<(), String> {
@@ -100,12 +105,27 @@ impl LagrangeCore {
         let mut out = Vec::with_capacity(xs.len());
         let mut i = 0;
         while i + 1 < xs.len() {
-            out.push(barycentric_eval(&self.x_values, &self.y_values, &self.weights, xs[i]));
-            out.push(barycentric_eval(&self.x_values, &self.y_values, &self.weights, xs[i + 1]));
+            out.push(barycentric_eval(
+                &self.x_values,
+                &self.y_values,
+                &self.weights,
+                xs[i],
+            ));
+            out.push(barycentric_eval(
+                &self.x_values,
+                &self.y_values,
+                &self.weights,
+                xs[i + 1],
+            ));
             i += 2;
         }
         if i < xs.len() {
-            out.push(barycentric_eval(&self.x_values, &self.y_values, &self.weights, xs[i]));
+            out.push(barycentric_eval(
+                &self.x_values,
+                &self.y_values,
+                &self.weights,
+                xs[i],
+            ));
         }
         Ok(out)
     }

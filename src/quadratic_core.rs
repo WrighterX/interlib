@@ -40,11 +40,8 @@ impl QuadraticCore {
         // Pre-compute all (a, b, c) coefficients — flat layout for cache locality
         let mut coefficients = Vec::with_capacity(n_segments * 3);
         for i in 0..n_segments {
-            let (a, b, c) = solve_quadratic_coefficients(
-                x[i], y[i],
-                x[i + 1], y[i + 1],
-                x[i + 2], y[i + 2],
-            );
+            let (a, b, c) =
+                solve_quadratic_coefficients(x[i], y[i], x[i + 1], y[i + 1], x[i + 2], y[i + 2]);
             coefficients.push(a);
             coefficients.push(b);
             coefficients.push(c);
@@ -138,14 +135,20 @@ impl QuadraticCore {
 
 /// Solve 3×3 system for quadratic coefficients using Cramer's rule
 #[inline]
-fn solve_quadratic_coefficients(x0: f64, y0: f64, x1: f64, y1: f64, x2: f64, y2: f64) -> (f64, f64, f64) {
+fn solve_quadratic_coefficients(
+    x0: f64,
+    y0: f64,
+    x1: f64,
+    y1: f64,
+    x2: f64,
+    y2: f64,
+) -> (f64, f64, f64) {
     let x0_sq = x0 * x0;
     let x1_sq = x1 * x1;
     let x2_sq = x2 * x2;
 
-    let det = 1.0 * (x1 * x2_sq - x2 * x1_sq)
-            - x0 * (1.0 * x2_sq - 1.0 * x1_sq)
-            + x0_sq * (1.0 * x2 - 1.0 * x1);
+    let det = 1.0 * (x1 * x2_sq - x2 * x1_sq) - x0 * (1.0 * x2_sq - 1.0 * x1_sq)
+        + x0_sq * (1.0 * x2 - 1.0 * x1);
 
     if det.abs() < 1e-12 {
         let slope = (y1 - y0) / (x1 - x0);
@@ -153,11 +156,11 @@ fn solve_quadratic_coefficients(x0: f64, y0: f64, x1: f64, y1: f64, x2: f64, y2:
         return (intercept, slope, 0.0);
     }
 
-    let da = y0 * (x1 * x2_sq - x2 * x1_sq) - y1 * (x0 * x2_sq - x2 * x0_sq) + y2 * (x0 * x1_sq - x1 * x0_sq);
-    let db = 1.0 * (y1 * x2_sq - y2 * x1_sq) - 1.0 * (y0 * x2_sq - y2 * x0_sq) + 1.0 * (y0 * x1_sq - y1 * x0_sq);
-    let dc = 1.0 * (x1 * y2 - x2 * y1)
-           - x0 * (1.0 * y2 - 1.0 * y1)
-           + y0 * (1.0 * x2 - 1.0 * x1);
+    let da = y0 * (x1 * x2_sq - x2 * x1_sq) - y1 * (x0 * x2_sq - x2 * x0_sq)
+        + y2 * (x0 * x1_sq - x1 * x0_sq);
+    let db = 1.0 * (y1 * x2_sq - y2 * x1_sq) - 1.0 * (y0 * x2_sq - y2 * x0_sq)
+        + 1.0 * (y0 * x1_sq - y1 * x0_sq);
+    let dc = 1.0 * (x1 * y2 - x2 * y1) - x0 * (1.0 * y2 - 1.0 * y1) + y0 * (1.0 * x2 - 1.0 * x1);
 
     (da / det, db / det, dc / det)
 }
@@ -176,7 +179,8 @@ mod tests {
     fn fit_and_evaluates() {
         let mut core = QuadraticCore::new();
         // y = x^2
-        core.fit(vec![0.0, 1.0, 2.0, 3.0], vec![0.0, 1.0, 4.0, 9.0]).unwrap();
+        core.fit(vec![0.0, 1.0, 2.0, 3.0], vec![0.0, 1.0, 4.0, 9.0])
+            .unwrap();
         assert!((core.evaluate_single(0.5).unwrap() - 0.25).abs() < 1e-12);
         assert!((core.evaluate_single(1.5).unwrap() - 2.25).abs() < 1e-12);
         assert!((core.evaluate_single(2.5).unwrap() - 6.25).abs() < 1e-12);

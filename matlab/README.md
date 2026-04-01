@@ -65,6 +65,7 @@ Smoke tests:
 - `matlab/tests/test_lagrange.m`
 - `matlab/tests/test_least_squares.m`
 - `matlab/tests/test_rbf.m`
+- `matlab/tests/test_chebyshev.m`
 
 Plot demos:
 - `matlab/examples/plot_linear_demo.m`
@@ -75,6 +76,7 @@ Plot demos:
 - `matlab/examples/plot_lagrange_demo.m`
 - `matlab/examples/plot_least_squares_demo.m`
 - `matlab/examples/plot_rbf_demo.m`
+- `matlab/examples/plot_chebyshev_demo.m`
 
 ## Container Workflow
 
@@ -88,6 +90,7 @@ Container helper:
 - `../scripts/run_matlab_lagrange_test.sh`
 - `../scripts/run_matlab_least_squares_test.sh`
 - `../scripts/run_matlab_rbf_test.sh`
+- `../scripts/run_matlab_chebyshev_test.sh`
 
 Recommended workflow for a Login Named User license:
 
@@ -99,7 +102,7 @@ Recommended workflow for a Login Named User license:
 clear classes
 addpath('/work/matlab')
 addpath('/work/matlab/tests')
-test_linear % or test_newton, test_quadratic, test_cubic_spline, test_hermite, test_lagrange, test_least_squares, test_rbf
+test_linear % or test_newton, test_quadratic, test_cubic_spline, test_hermite, test_lagrange, test_least_squares, test_rbf, test_chebyshev
 ```
 
 For a plot demo in the same session:

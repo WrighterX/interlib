@@ -1,9 +1,8 @@
 /// Lagrange Interpolation Module (Barycentric Form)
 ///
 /// Thin PyO3 wrapper over the shared `LagrangeCore`.
-
 use crate::lagrange_core::LagrangeCore;
-use numpy::{PyArray1, PyReadonlyArray1, PyArrayMethods};
+use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -30,12 +29,17 @@ impl LagrangeInterpolator {
     }
 
     pub fn add_point(&mut self, x_new: f64, y_new: f64) -> PyResult<()> {
-        self.core.add_point(x_new, y_new).map_err(PyValueError::new_err)
+        self.core
+            .add_point(x_new, y_new)
+            .map_err(PyValueError::new_err)
     }
 
     pub fn __call__(&self, py: Python<'_>, x: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         if let Ok(single) = x.extract::<f64>() {
-            let value = self.core.evaluate_single(single).map_err(PyValueError::new_err)?;
+            let value = self
+                .core
+                .evaluate_single(single)
+                .map_err(PyValueError::new_err)?;
             return Ok(value.into_pyobject(py)?.into_any().unbind());
         }
 

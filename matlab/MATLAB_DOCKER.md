@@ -64,6 +64,9 @@ For Lagrange run `make matlab-test-lagrange` (interactive) or
 For RBF run `make matlab-test-rbf` (interactive) or
 `make matlab-test-rbf-batch` once the container workflow is ready for headless automation.
 
+For Chebyshev run `make matlab-test-chebyshev` (interactive) or
+`make matlab-test-chebyshev-batch` when your license supports automating the run.
+
 Only use `matlab-test-batch` if your license setup supports non-interactive
 batch launches without prompting again.
 

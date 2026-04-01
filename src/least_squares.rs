@@ -1,7 +1,6 @@
 /// Least Squares Polynomial Approximation module reusing shared core.
-
 use crate::least_squares_core::LeastSquaresCore;
-use numpy::{PyArray1, PyReadonlyArray1, PyArrayMethods};
+use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -38,7 +37,10 @@ impl LeastSquaresInterpolator {
 
     pub fn __call__(&self, py: Python<'_>, x: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         if let Ok(single) = x.extract::<f64>() {
-            let result = self.core.evaluate_single(single).map_err(PyValueError::new_err)?;
+            let result = self
+                .core
+                .evaluate_single(single)
+                .map_err(PyValueError::new_err)?;
             return Ok(result.into_pyobject(py)?.into_any().unbind());
         }
 

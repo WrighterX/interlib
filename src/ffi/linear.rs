@@ -1,8 +1,8 @@
 use std::ffi::c_void;
 use std::os::raw::c_char;
 
+use crate::ffi::{clear_last_error, fail, last_error_string, success, write_last_error};
 use crate::linear_core::LinearCore;
-use crate::ffi::{clear_last_error, fail, success, last_error_string, write_last_error};
 
 fn core_from_handle(handle: *mut c_void) -> Result<*mut LinearCore, &'static str> {
     if handle.is_null() {
@@ -65,11 +65,7 @@ pub extern "C" fn interlib_linear_fit(
 
 /// Evaluate the linear interpolator at a single point.
 #[unsafe(no_mangle)]
-pub extern "C" fn interlib_linear_eval(
-    handle: *mut c_void,
-    x: f64,
-    out_value: *mut f64,
-) -> i32 {
+pub extern "C" fn interlib_linear_eval(handle: *mut c_void, x: f64, out_value: *mut f64) -> i32 {
     let core = match core_from_handle(handle) {
         Ok(core) => core,
         Err(message) => return fail(message),
@@ -140,8 +136,7 @@ static KEEP_LINEAR_DESTROY: extern "C" fn(*mut c_void) = interlib_linear_destroy
 static KEEP_LINEAR_FIT: extern "C" fn(*mut c_void, *const f64, usize, *const f64, usize) -> i32 =
     interlib_linear_fit;
 #[used]
-static KEEP_LINEAR_EVAL: extern "C" fn(*mut c_void, f64, *mut f64) -> i32 =
-    interlib_linear_eval;
+static KEEP_LINEAR_EVAL: extern "C" fn(*mut c_void, f64, *mut f64) -> i32 = interlib_linear_eval;
 #[used]
 static KEEP_LINEAR_EVAL_MANY: extern "C" fn(*mut c_void, *const f64, usize, *mut f64) -> i32 =
     interlib_linear_eval_many;
@@ -182,7 +177,13 @@ mod tests {
 
     #[test]
     fn ffi_reports_errors() {
-        let status = interlib_linear_fit(std::ptr::null_mut(), std::ptr::null(), 0, std::ptr::null(), 0);
+        let status = interlib_linear_fit(
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            0,
+            std::ptr::null(),
+            0,
+        );
         assert_eq!(status, -1);
 
         let mut buffer = [0i8; 64];

@@ -50,7 +50,11 @@ impl NewtonCore {
         let mut i = 0;
         while i + 1 < n {
             results.push(newton_evaluate(&self.x_values, &self.coefficients, xs[i]));
-            results.push(newton_evaluate(&self.x_values, &self.coefficients, xs[i + 1]));
+            results.push(newton_evaluate(
+                &self.x_values,
+                &self.coefficients,
+                xs[i + 1],
+            ));
             i += 2;
         }
         if i < n {

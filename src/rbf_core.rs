@@ -121,7 +121,13 @@ impl RBFCore {
         Ok(xs
             .iter()
             .map(|&value| {
-                rbf_evaluate(&self.x_values, &self.weights, self.kernel, self.epsilon, value)
+                rbf_evaluate(
+                    &self.x_values,
+                    &self.weights,
+                    self.kernel,
+                    self.epsilon,
+                    value,
+                )
             })
             .collect())
     }
@@ -134,7 +140,13 @@ impl RBFCore {
             return Err("Interpolator not fitted".into());
         }
         for (value, slot) in xs.iter().zip(out.iter_mut()) {
-            *slot = rbf_evaluate(&self.x_values, &self.weights, self.kernel, self.epsilon, *value);
+            *slot = rbf_evaluate(
+                &self.x_values,
+                &self.weights,
+                self.kernel,
+                self.epsilon,
+                *value,
+            );
         }
         Ok(())
     }
@@ -248,13 +260,7 @@ fn solve_linear_system(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Result<Vec<f64>
     Ok(x)
 }
 
-fn rbf_evaluate(
-    x_values: &[f64],
-    weights: &[f64],
-    kernel: RBFKernel,
-    epsilon: f64,
-    x: f64,
-) -> f64 {
+fn rbf_evaluate(x_values: &[f64], weights: &[f64], kernel: RBFKernel, epsilon: f64, x: f64) -> f64 {
     let mut result = 0.0;
     for idx in 0..x_values.len() {
         let r = (x - x_values[idx]).abs();

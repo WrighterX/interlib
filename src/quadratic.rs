@@ -78,9 +78,9 @@
 /// result = interp(2.5)  # Should be close to 6.25
 /// ```
 use crate::quadratic_core::QuadraticCore;
-use pyo3::prelude::*;
+use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1};
 use pyo3::exceptions::PyValueError;
-use numpy::{PyArray1, PyReadonlyArray1, PyArrayMethods};
+use pyo3::prelude::*;
 
 /// Piecewise Quadratic Interpolator
 ///
@@ -160,7 +160,10 @@ impl QuadraticInterpolator {
     pub fn __call__(&self, py: Python<'_>, x: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         // Try to extract as a single float
         if let Ok(single_x) = x.extract::<f64>() {
-            let result = self.core.evaluate_single(single_x).map_err(PyValueError::new_err)?;
+            let result = self
+                .core
+                .evaluate_single(single_x)
+                .map_err(PyValueError::new_err)?;
             return Ok(result.into_pyobject(py)?.into_any().unbind());
         }
 
@@ -170,19 +173,24 @@ impl QuadraticInterpolator {
             let result_array = unsafe { PyArray1::<f64>::new(py, [x_slice.len()], false) };
             {
                 let result_slice = unsafe { result_array.as_slice_mut()? };
-                self.core.fill_many(x_slice, result_slice).map_err(PyValueError::new_err)?;
+                self.core
+                    .fill_many(x_slice, result_slice)
+                    .map_err(PyValueError::new_err)?;
             }
             return Ok(result_array.into_any().unbind());
         }
 
         // Try to extract as a list of floats (with 2-way unrolling)
         if let Ok(x_list) = x.extract::<Vec<f64>>() {
-            let results = self.core.evaluate_many(&x_list).map_err(PyValueError::new_err)?;
+            let results = self
+                .core
+                .evaluate_many(&x_list)
+                .map_err(PyValueError::new_err)?;
             return Ok(results.into_pyobject(py)?.into_any().unbind());
         }
 
         Err(PyValueError::new_err(
-            "Input must be a float, list of floats, or NumPy array"
+            "Input must be a float, list of floats, or NumPy array",
         ))
     }
 

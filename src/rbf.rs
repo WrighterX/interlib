@@ -37,7 +37,10 @@ impl RBFInterpolator {
 
     pub fn __call__(&self, py: Python<'_>, x: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         if let Ok(single) = x.extract::<f64>() {
-            let value = self.core.evaluate_single(single).map_err(PyValueError::new_err)?;
+            let value = self
+                .core
+                .evaluate_single(single)
+                .map_err(PyValueError::new_err)?;
             return Ok(value.into_pyobject(py)?.into_any().unbind());
         }
 

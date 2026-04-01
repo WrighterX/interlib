@@ -104,6 +104,13 @@ size_t interlib_rbf_last_error(char* buffer, size_t buffer_len);
 size_t interlib_rbf_count(void* handle);
 int interlib_rbf_weights(void* handle, double* out_ptr, size_t out_len);
 
+void* interlib_chebyshev_create(size_t n_points, double x_min, double x_max, int use_clenshaw);
+void interlib_chebyshev_destroy(void* handle);
+int interlib_chebyshev_fit(void* handle, const double* y_ptr, size_t y_len);
+int interlib_chebyshev_eval(void* handle, double x, double* out_value);
+int interlib_chebyshev_eval_many(void* handle, const double* x_ptr, size_t x_len, double* out_ptr);
+size_t interlib_chebyshev_last_error(char* buffer, size_t buffer_len);
+
 #ifdef __cplusplus
 }
 #endif
