@@ -60,3 +60,11 @@ print(f"Interpolated values: {y_new}")
 ```
 
 at your option and use case.
+
+## MATLAB Testing
+
+The repo also includes a MATLAB smoke test for the linear prototype, runnable
+via Docker with a MathWorks MATLAB image. For Login Named User licensing, use
+the interactive container workflow documented in the MATLAB note.
+
+See [matlab/MATLAB_DOCKER.md](/home/tret/Code/allcode/rusting_away/uni_diploma/interlib/matlab/MATLAB_DOCKER.md).

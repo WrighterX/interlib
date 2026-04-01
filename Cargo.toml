@@ -3,10 +3,15 @@ name = "interlib"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = ["python"]
+python = ["dep:pyo3", "dep:numpy"]
+ffi = []
+
 [lib]
 name = "interlib"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-pyo3 = { version = "0.27.2", features = ["extension-module"] }
-numpy = "0.27.1"
+pyo3 = { version = "0.27.2", features = ["extension-module"], optional = true }
+numpy = { version = "0.27.1", optional = true }

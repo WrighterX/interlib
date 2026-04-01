@@ -1,14 +1,25 @@
+mod linear_core;
+mod ffi;
+mod matlab;
+#[cfg(feature = "python")]
 use pyo3::prelude::*;
-
-// Module declarations
+#[cfg(feature = "python")]
 mod lagrange;
+#[cfg(feature = "python")]
 mod newton;
+#[cfg(feature = "python")]
 mod linear;
+#[cfg(feature = "python")]
 mod quadratic;
+#[cfg(feature = "python")]
 mod cubic_spline;
+#[cfg(feature = "python")]
 mod hermite;
+#[cfg(feature = "python")]
 mod least_squares;
+#[cfg(feature = "python")]
 mod rbf;
+#[cfg(feature = "python")]
 mod chebyshev;
 
 /// A high-performance Python interpolation library implemented in Rust.
@@ -21,6 +32,7 @@ mod chebyshev;
 ///     interp = LinearInterpolator()
 ///     interp.fit([0.0, 1.0], [0.0, 1.0])
 ///     print(interp(0.5))  # 0.5
+#[cfg(feature = "python")]
 #[pymodule]
 #[pyo3(name = "interlib")]
 fn interlib(m: &Bound<'_, PyModule>) -> PyResult<()> {
