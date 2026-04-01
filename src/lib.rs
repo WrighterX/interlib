@@ -1,4 +1,6 @@
 mod linear_core;
+mod newton_core;
+mod quadratic_core;
 mod ffi;
 mod matlab;
 #[cfg(feature = "python")]
@@ -24,8 +26,8 @@ mod chebyshev;
 
 /// A high-performance Python interpolation library implemented in Rust.
 ///
-/// Provides various interpolators like LinearInterpolator, QuadraticInterpolator,
-/// RBFInterpolator, etc.
+/// This module provides various interpolation algorithms optimized for performance.
+/// It uses PyO3 for Python bindings and can handle both scalar and NumPy array inputs.
 ///
 /// Example:
 ///     from interlib import LinearInterpolator
@@ -36,10 +38,9 @@ mod chebyshev;
 #[pymodule]
 #[pyo3(name = "interlib")]
 fn interlib(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    // all interpolation classes
+    m.add_class::<linear::LinearInterpolator>()?;
     m.add_class::<lagrange::LagrangeInterpolator>()?;
     m.add_class::<newton::NewtonInterpolator>()?;
-    m.add_class::<linear::LinearInterpolator>()?;
     m.add_class::<quadratic::QuadraticInterpolator>()?;
     m.add_class::<cubic_spline::CubicSplineInterpolator>()?;
     m.add_class::<hermite::HermiteInterpolator>()?;

@@ -1,5 +1,5 @@
-function path = linearLibraryPath()
-env_path = getenv('INTERLIB_LINEAR_LIBRARY');
+function path = newtonLibraryPath()
+env_path = getenv('INTERLIB_NEWTON_LIBRARY');
 if ~isempty(env_path)
     path = string(env_path);
     return;

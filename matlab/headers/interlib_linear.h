@@ -18,7 +18,7 @@ int interlib_linear_fit(
 );
 int interlib_linear_eval(void* handle, double x, double* out_value);
 int interlib_linear_eval_many(void* handle, const double* x_ptr, size_t x_len, double* out_ptr);
-size_t interlib_linear_last_error(char* buffer, size_t buffer_len);
+size_t interlib_last_error(char* buffer, size_t buffer_len);
 
 #ifdef __cplusplus
 }

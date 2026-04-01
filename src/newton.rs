@@ -55,59 +55,10 @@
 /// # Evaluate at new points
 /// result = interp(1.5)
 /// ```
-
+use crate::newton_core::NewtonCore;
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
 use numpy::{PyArray1, PyReadonlyArray1, PyArrayMethods};
-
-/// Compute divided differences table
-/// 
-/// Builds the divided differences table using Newton's divided difference formula.
-/// The coefficients are stored in the first column of the table.
-/// 
-/// # Arguments
-/// 
-/// * `xs` - Array of x coordinates
-/// * `ys` - Array of y coordinates (function values)
-/// 
-/// # Returns
-/// 
-/// Vector of divided difference coefficients
-fn divided_differences(xs: &[f64], ys: &[f64]) -> Vec<f64> {
-    let n = xs.len();
-    let mut coef = ys.to_vec();
-    
-    for j in 1..n {
-        for i in (j..n).rev() {
-            coef[i] = (coef[i] - coef[i - 1]) / (xs[i] - xs[i - j]);
-        }
-    }
-    coef
-}
-
-/// Evaluate Newton polynomial using Horner's method
-/// 
-/// Efficiently evaluates the Newton polynomial at a point using nested multiplication.
-/// 
-/// # Arguments
-/// 
-/// * `xs` - Array of x coordinates
-/// * `coef` - Array of divided difference coefficients
-/// * `x` - Point at which to evaluate
-/// 
-/// # Returns
-/// 
-/// The interpolated value at point x
-#[inline]
-fn newton_evaluate(xs: &[f64], coef: &[f64], x: f64) -> f64 {
-    let n = coef.len();
-    let mut result = coef[n - 1];
-    
-    for i in (0..n - 1).rev() {
-        result = result * (x - xs[i]) + coef[i];
-    }
-    result
-}
 
 /// Newton Divided Differences Interpolator
 ///
@@ -121,9 +72,7 @@ fn newton_evaluate(xs: &[f64], coef: &[f64], x: f64) -> f64 {
 /// * `fitted` - Whether the interpolator has been fitted
 #[pyclass]
 pub struct NewtonInterpolator {
-    x_values: Vec<f64>,
-    coefficients: Vec<f64>,
-    fitted: bool,
+    core: NewtonCore,
 }
 
 #[pymethods]
@@ -137,9 +86,7 @@ impl NewtonInterpolator {
     #[new]
     pub fn new() -> Self {
         NewtonInterpolator {
-            x_values: Vec::new(),
-            coefficients: Vec::new(),
-            fitted: false,
+            core: NewtonCore::new(),
         }
     }
 
@@ -165,22 +112,7 @@ impl NewtonInterpolator {
     /// The divided differences are computed once during fitting, making
     /// subsequent evaluations more efficient than Lagrange interpolation.
     pub fn fit(&mut self, x: Vec<f64>, y: Vec<f64>) -> PyResult<()> {
-        if x.len() != y.len() {
-            return Err(PyValueError::new_err(
-                "x and y must have the same length"
-            ));
-        }
-        if x.is_empty() {
-            return Err(PyValueError::new_err(
-                "x and y cannot be empty"
-            ));
-        }
-        
-        self.coefficients = divided_differences(&x, &y);
-        self.x_values = x;
-        
-        self.fitted = true;
-        Ok(())
+        self.core.fit(x, y).map_err(PyValueError::new_err)
     }
 
     /// Get the Newton polynomial divided difference coefficients
@@ -199,12 +131,7 @@ impl NewtonInterpolator {
     /// -----
     /// The i-th coefficient multiplies the term (x-x₀)(x-x₁)...(x-xᵢ₋₁)
     pub fn get_coefficients(&self) -> PyResult<Vec<f64>> {
-        if !self.fitted {
-            return Err(PyValueError::new_err(
-                "Interpolator not fitted. Call fit(x, y) first."
-            ));
-        }
-        Ok(self.coefficients.clone())
+        self.core.get_coefficients().map_err(PyValueError::new_err)
     }
 
     /// Evaluate the interpolation at one or more points
@@ -227,15 +154,9 @@ impl NewtonInterpolator {
     ///     If the interpolator has not been fitted
     ///     If input is neither a float nor a list of floats
     pub fn __call__(&self, py: Python<'_>, x: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
-        if !self.fitted {
-            return Err(PyValueError::new_err(
-                "Interpolator not fitted. Call fit(x, y) first."
-            ));
-        }
-
         // Try to extract as a single float
         if let Ok(single_x) = x.extract::<f64>() {
-            let result = newton_evaluate(&self.x_values, &self.coefficients, single_x);
+            let result = self.core.evaluate_single(single_x).map_err(PyValueError::new_err)?;
             return Ok(result.into_pyobject(py)?.into_any().unbind());
         }
 
@@ -243,40 +164,16 @@ impl NewtonInterpolator {
         if let Ok(arr) = x.extract::<PyReadonlyArray1<f64>>() {
             let x_slice = arr.as_slice()?;
             let result_array = unsafe { PyArray1::<f64>::new(py, [x_slice.len()], false) };
-            let result_slice = unsafe { result_array.as_slice_mut()? };
-            let n = x_slice.len();
-            let mut i = 0;
-
-            // 2-way loop unrolling for batch evaluation
-            while i + 1 < n {
-                result_slice[i]     = newton_evaluate(&self.x_values, &self.coefficients, x_slice[i]);
-                result_slice[i + 1] = newton_evaluate(&self.x_values, &self.coefficients, x_slice[i + 1]);
-                i += 2;
+            {
+                let result_slice = unsafe { result_array.as_slice_mut()? };
+                self.core.fill_many(x_slice, result_slice).map_err(PyValueError::new_err)?;
             }
-
-            if i < n {
-                result_slice[i] = newton_evaluate(&self.x_values, &self.coefficients, x_slice[i]);
-            }
-
             return Ok(result_array.into_any().unbind());
         }
 
         // Try to extract as a list of floats (with 2-way unrolling)
         if let Ok(x_list) = x.extract::<Vec<f64>>() {
-            let n = x_list.len();
-            let mut results = Vec::with_capacity(n);
-            let mut i = 0;
-
-            while i + 1 < n {
-                results.push(newton_evaluate(&self.x_values, &self.coefficients, x_list[i]));
-                results.push(newton_evaluate(&self.x_values, &self.coefficients, x_list[i + 1]));
-                i += 2;
-            }
-
-            if i < n {
-                results.push(newton_evaluate(&self.x_values, &self.coefficients, x_list[i]));
-            }
-
+            let results = self.core.evaluate_many(&x_list).map_err(PyValueError::new_err)?;
             return Ok(results.into_pyobject(py)?.into_any().unbind());
         }
 
@@ -292,13 +189,6 @@ impl NewtonInterpolator {
     /// str
     ///     Description of the interpolator state
     pub fn __repr__(&self) -> String {
-        if self.fitted {
-            format!(
-                "NewtonInterpolator(fitted with {} points)",
-                self.x_values.len()
-            )
-        } else {
-            "NewtonInterpolator(not fitted)".to_string()
-        }
+        self.core.repr()
     }
 }

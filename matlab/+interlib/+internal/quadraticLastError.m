@@ -1,5 +1,5 @@
-function message = linearLastError()
-alias = interlib.internal.linearAlias();
+function message = quadraticLastError()
+alias = interlib.internal.quadraticAlias();
 len = calllib(alias, 'interlib_last_error', libpointer('charPtr', []), 0);
 if len <= 1
     message = 'No error message available.';

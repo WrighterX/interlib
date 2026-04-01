@@ -67,6 +67,10 @@ CARGO_TARGET_DIR=target/matlab cargo build --lib --no-default-features --feature
 This is intentional. The default Python build links against PyO3 and is not a
 standalone MATLAB-loadable shared library.
 
+The MATLAB wrappers now share one native alias, `interlib_native`, so the
+order in which you load linear, Newton, or later wrappers does not matter in a
+fresh MATLAB session.
+
 Committed-image flow:
 
 1. Start the official image and log in once.

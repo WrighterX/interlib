@@ -1,38 +1,38 @@
 use std::ffi::c_void;
 use std::os::raw::c_char;
 
-use crate::linear_core::LinearCore;
+use crate::quadratic_core::QuadraticCore;
 use crate::ffi::{clear_last_error, fail, success, last_error_string, write_last_error};
 
-fn core_from_handle(handle: *mut c_void) -> Result<*mut LinearCore, &'static str> {
+fn core_from_handle(handle: *mut c_void) -> Result<*mut QuadraticCore, &'static str> {
     if handle.is_null() {
-        return Err("linear handle is null");
+        return Err("quadratic handle is null");
     }
-    Ok(handle as *mut LinearCore)
+    Ok(handle as *mut QuadraticCore)
 }
 
-/// Create a new linear interpolator handle for C consumers.
+/// Create a new quadratic interpolator handle for C consumers.
 #[unsafe(no_mangle)]
-pub extern "C" fn interlib_linear_create() -> *mut c_void {
+pub extern "C" fn interlib_quadratic_create() -> *mut c_void {
     clear_last_error();
-    Box::into_raw(Box::new(LinearCore::new())) as *mut c_void
+    Box::into_raw(Box::new(QuadraticCore::new())) as *mut c_void
 }
 
-/// Destroy a linear interpolator handle created by `interlib_linear_create`.
+/// Destroy a quadratic interpolator handle created by `interlib_quadratic_create`.
 #[unsafe(no_mangle)]
-pub extern "C" fn interlib_linear_destroy(handle: *mut c_void) {
+pub extern "C" fn interlib_quadratic_destroy(handle: *mut c_void) {
     if handle.is_null() {
         return;
     }
 
     unsafe {
-        drop(Box::from_raw(handle as *mut LinearCore));
+        drop(Box::from_raw(handle as *mut QuadraticCore));
     }
 }
 
-/// Fit the linear interpolator with x/y data.
+/// Fit the quadratic interpolator with x/y data.
 #[unsafe(no_mangle)]
-pub extern "C" fn interlib_linear_fit(
+pub extern "C" fn interlib_quadratic_fit(
     handle: *mut c_void,
     x_ptr: *const f64,
     x_len: usize,
@@ -49,8 +49,8 @@ pub extern "C" fn interlib_linear_fit(
     if x_len != y_len {
         return fail("x and y must have the same length");
     }
-    if x_len == 0 {
-        return fail("x and y cannot be empty");
+    if x_len < 3 {
+        return fail("Quadratic interpolation requires at least 3 data points");
     }
 
     let x = unsafe { std::slice::from_raw_parts(x_ptr, x_len) };
@@ -63,9 +63,9 @@ pub extern "C" fn interlib_linear_fit(
     }
 }
 
-/// Evaluate the linear interpolator at a single point.
+/// Evaluate the quadratic interpolator at a single point.
 #[unsafe(no_mangle)]
-pub extern "C" fn interlib_linear_eval(
+pub extern "C" fn interlib_quadratic_eval(
     handle: *mut c_void,
     x: f64,
     out_value: *mut f64,
@@ -90,9 +90,9 @@ pub extern "C" fn interlib_linear_eval(
     }
 }
 
-/// Evaluate the linear interpolator for a contiguous array of points.
+/// Evaluate the quadratic interpolator for a contiguous array of points.
 #[unsafe(no_mangle)]
-pub extern "C" fn interlib_linear_eval_many(
+pub extern "C" fn interlib_quadratic_eval_many(
     handle: *mut c_void,
     x_ptr: *const f64,
     x_len: usize,
@@ -125,51 +125,7 @@ pub extern "C" fn interlib_linear_eval_many(
 /// Returns the number of bytes required including the trailing nul byte.
 /// DEPRECATED: Use interlib_last_error instead.
 #[unsafe(no_mangle)]
-pub extern "C" fn interlib_linear_last_error(buffer: *mut c_char, buffer_len: usize) -> usize {
+pub extern "C" fn interlib_quadratic_last_error(buffer: *mut c_char, buffer_len: usize) -> usize {
     let message = last_error_string();
     write_last_error(&message, buffer, buffer_len)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::ffi::CStr;
-
-    #[test]
-    fn ffi_round_trip_fit_and_eval() {
-        let handle = interlib_linear_create();
-        assert!(!handle.is_null());
-
-        let xs = [0.0, 1.0, 2.0];
-        let ys = [0.0, 1.0, 4.0];
-        assert_eq!(
-            interlib_linear_fit(handle, xs.as_ptr(), xs.len(), ys.as_ptr(), ys.len()),
-            0
-        );
-
-        let mut value = 0.0;
-        assert_eq!(interlib_linear_eval(handle, 0.5, &mut value), 0);
-        assert!((value - 0.5).abs() < 1e-12);
-
-        let mut out = [0.0; 3];
-        assert_eq!(
-            interlib_linear_eval_many(handle, xs.as_ptr(), xs.len(), out.as_mut_ptr()),
-            0
-        );
-        assert_eq!(out, [0.0, 1.0, 4.0]);
-
-        interlib_linear_destroy(handle);
-    }
-
-    #[test]
-    fn ffi_reports_errors() {
-        let status = interlib_linear_fit(std::ptr::null_mut(), std::ptr::null(), 0, std::ptr::null(), 0);
-        assert_eq!(status, -1);
-
-        let mut buffer = [0i8; 64];
-        let required = interlib_linear_last_error(buffer.as_mut_ptr(), buffer.len());
-        let message = unsafe { CStr::from_ptr(buffer.as_ptr()) }.to_str().unwrap();
-        assert!(message.contains("linear handle is null"));
-        assert!(required > 0);
-    }
 }
