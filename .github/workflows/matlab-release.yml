@@ -3,6 +3,8 @@ name: MATLAB Binary Release
 on:
   workflow_dispatch:
   push:
+    branches:
+      - test
     tags:
       - "matlab-*"
 
