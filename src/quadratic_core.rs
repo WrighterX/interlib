@@ -27,7 +27,8 @@ impl QuadraticCore {
             return Err("Quadratic interpolation requires at least 3 data points".to_string());
         }
 
-        // Check if x values are strictly increasing
+        // Each quadratic segment is built from a local triplet, so the x-grid
+        // must be strictly increasing.
         for i in 0..x.len() - 1 {
             if x[i] >= x[i + 1] {
                 return Err("x values must be strictly increasing".to_string());
@@ -35,9 +36,10 @@ impl QuadraticCore {
         }
 
         let n = x.len();
-        let n_segments = n - 2; // overlapping triplets: [0,1,2], [1,2,3], ..., [n-3,n-2,n-1]
+        // Overlapping triplets: [0,1,2], [1,2,3], ..., [n-3,n-2,n-1].
+        let n_segments = n - 2;
 
-        // Pre-compute all (a, b, c) coefficients — flat layout for cache locality
+        // Flat layout keeps coefficient lookup compact in the hot path.
         let mut coefficients = Vec::with_capacity(n_segments * 3);
         for i in 0..n_segments {
             let (a, b, c) =
@@ -105,7 +107,7 @@ impl QuadraticCore {
         let n = x_values.len();
         let n_segments = n - 2;
 
-        // Binary search: find first index where x_values[i] > x
+        // Binary search: find the local segment for x without scanning all points.
         let pos = x_values.partition_point(|&xi| xi <= x);
 
         // Map position to segment index, clamped to valid range [0, n_segments - 1]
@@ -147,6 +149,8 @@ fn solve_quadratic_coefficients(
     let x1_sq = x1 * x1;
     let x2_sq = x2 * x2;
 
+    // Solve the 3x3 system analytically; the fallback below handles the
+    // degenerate case where the local points are effectively collinear.
     let det = 1.0 * (x1 * x2_sq - x2 * x1_sq) - x0 * (1.0 * x2_sq - 1.0 * x1_sq)
         + x0_sq * (1.0 * x2 - 1.0 * x1);
 

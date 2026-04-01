@@ -44,6 +44,8 @@ impl CubicSplineCore {
             return Err("Cubic spline interpolation requires at least 2 data points".to_string());
         }
 
+        // A spline is defined on sorted knots; the later interval search assumes
+        // this ordering, so we validate it up front.
         for i in 0..x.len() - 1 {
             if x[i] >= x[i + 1] {
                 return Err("x values must be strictly increasing".to_string());
@@ -51,6 +53,8 @@ impl CubicSplineCore {
         }
 
         self.x_values = x;
+        // The not-a-knot construction produces one cubic per interval with
+        // C2 continuity everywhere except the enforced endpoint condition.
         self.segments = compute_not_a_knot_spline(&self.x_values, &y);
 
         if self.segments.is_empty() {
@@ -111,12 +115,15 @@ impl CubicSplineCore {
     fn eval_internal(&self, val: f64) -> f64 {
         let n = self.x_values.len();
         if val <= self.x_values[0] {
+            // Outside the knot range we extrapolate using the nearest segment.
             return self.segments[0].eval(val);
         }
         if val >= self.x_values[n - 1] {
             return self.segments[n - 2].eval(val);
         }
 
+        // Local interval lookup keeps evaluation O(log n) for knot search and
+        // O(1) for the actual cubic evaluation.
         let idx = match self
             .x_values
             .binary_search_by(|v| v.partial_cmp(&val).unwrap())
@@ -170,6 +177,7 @@ fn solve_tridiagonal(a: &[f64], b: &[f64], c: &[f64], d: &[f64]) -> Vec<f64> {
     let mut d_prime = vec![0.0; n];
     let mut x = vec![0.0; n];
 
+    // Thomas algorithm: forward elimination followed by back substitution.
     c_prime[0] = c[0] / b[0];
     d_prime[0] = d[0] / b[0];
 
@@ -197,6 +205,8 @@ fn compute_not_a_knot_spline(x: &[f64], y: &[f64]) -> Vec<SplineSegment> {
         delta[i] = (y[i + 1] - y[i]) / h[i];
     }
 
+    // `c_coeffs` hold the second-derivative-like terms that drive the cubic
+    // curvature on each interval.
     let mut c_coeffs = vec![0.0; n];
     if n >= 4 {
         let m = n - 2;

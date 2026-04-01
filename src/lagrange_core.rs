@@ -24,6 +24,8 @@ impl LagrangeCore {
             return Err("x and y cannot be empty".into());
         }
 
+        // Barycentric weights are the expensive part; once computed, the
+        // interpolant evaluates quickly and stably.
         self.weights = compute_barycentric_weights(&x);
         self.x_values = x;
         self.y_values = y;
@@ -62,6 +64,8 @@ impl LagrangeCore {
         }
         w_new = 1.0 / w_new;
 
+        // Update the barycentric form incrementally instead of recomputing
+        // every weight from scratch.
         self.x_values.push(x_new);
         self.y_values.push(y_new);
         self.weights.push(w_new);
@@ -145,6 +149,7 @@ impl LagrangeCore {
 fn compute_barycentric_weights(x_values: &[f64]) -> Vec<f64> {
     let n = x_values.len();
     let mut weights = vec![1.0; n];
+    // O(n^2) precompute, but evaluation becomes O(n) with no polynomial build.
     for j in 0..n {
         for k in 0..n {
             if k != j {
@@ -164,6 +169,7 @@ fn barycentric_eval(x_values: &[f64], y_values: &[f64], weights: &[f64], x: f64)
         if diff == 0.0 {
             return y_values[j];
         }
+        // The barycentric ratio keeps the interpolation numerically stable.
         let term = weights[j] / diff;
         numer += term * y_values[j];
         denom += term;

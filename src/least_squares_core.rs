@@ -9,6 +9,7 @@ fn compute_normal_equations(
         return Err(format!("Need at least {} points for degree {}", m, degree));
     }
 
+    // We need powers up to 2 * degree because A^T A contains x^(i + j).
     let max_power = 2 * m - 1;
     let mut sum_xp = vec![0.0f64; max_power + 1];
     let mut sum_xyp = vec![0.0f64; m];
@@ -17,6 +18,7 @@ fn compute_normal_equations(
         let xk = x_values[k];
         let yk = y_values[k];
         let mut xp = 1.0;
+        // Accumulate the Gram matrix and the right-hand side in one pass.
         for p in 0..m {
             sum_xp[p] += xp;
             sum_xyp[p] += yk * xp;
@@ -45,6 +47,8 @@ fn solve_linear_system(ata: Vec<Vec<f64>>) -> Result<Vec<f64>, String> {
     let mut b = ata[n].clone();
 
     for k in 0..n {
+        // Partial pivoting keeps the normal-equation solve from blowing up
+        // as quickly when the basis is ill-conditioned.
         let mut max_idx = k;
         let mut max_val = a[k][k].abs();
         for i in k + 1..n {
@@ -81,6 +85,8 @@ fn solve_linear_system(ata: Vec<Vec<f64>>) -> Result<Vec<f64>, String> {
 }
 
 fn evaluate_polynomial(coefficients: &[f64], x: f64) -> f64 {
+    // Least squares stores coefficients in ascending power order:
+    // c0 + c1*x + c2*x^2 + ...
     coefficients
         .iter()
         .enumerate()
@@ -124,6 +130,7 @@ impl LeastSquaresCore {
         }
         let ata = compute_normal_equations(&x, &y, self.degree)?;
         let coeffs = solve_linear_system(ata)?;
+        // Keep the original sample points for R^2 and reporting.
         self.x_values = x;
         self.y_values = y;
         self.coefficients = coeffs;
@@ -153,6 +160,7 @@ impl LeastSquaresCore {
             return Err("Input/output length mismatch".to_string());
         }
         let mut i = 0;
+        // The batch path is intentionally simple and allocation-free.
         while i + 1 < xs.len() {
             out[i] = evaluate_polynomial(&self.coefficients, xs[i]);
             out[i + 1] = evaluate_polynomial(&self.coefficients, xs[i + 1]);

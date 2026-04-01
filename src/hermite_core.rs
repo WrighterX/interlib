@@ -33,6 +33,8 @@ impl HermiteCore {
         self.y_values = y;
         self.dy_values = dy;
 
+        // Hermite interpolation duplicates each knot so both function value
+        // and derivative constraints can live in the same divided-difference table.
         let (z, coef) =
             hermite_divided_differences(&self.x_values, &self.y_values, &self.dy_values);
 
@@ -120,6 +122,7 @@ fn hermite_divided_differences(
     let mut q = vec![0.0; m * m];
     let stride = m;
 
+    // Each sample point is repeated twice in the augmented node vector.
     for i in 0..n {
         z.push(x_values[i]);
         z.push(x_values[i]);
@@ -128,6 +131,7 @@ fn hermite_divided_differences(
     }
 
     for i in 0..n {
+        // The first off-diagonal stores derivatives directly when nodes repeat.
         q[(2 * i + 1) * stride + 1] = dy_values[i];
         if i > 0 {
             let idx_cur = 2 * i * stride;
@@ -137,6 +141,8 @@ fn hermite_divided_differences(
         }
     }
 
+    // Higher-order divided differences are filled in place using the usual
+    // Newton-table recurrence.
     for j in 2..m {
         let mut i = j;
         while i + 1 < m {
@@ -180,6 +186,7 @@ fn hermite_evaluate(z: &[f64], coefficients: &[f64], x: f64) -> f64 {
         return f64::NAN;
     }
     let mut result = coefficients[n - 1];
+    // Horner evaluation on the Hermite/Newton basis.
     for i in (0..n - 1).rev() {
         result = result * (x - z[i]) + coefficients[i];
     }

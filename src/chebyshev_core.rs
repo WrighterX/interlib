@@ -8,6 +8,7 @@ use std::f64::consts::PI;
 fn chebyshev_nodes(n: usize, a: f64, b: f64) -> Vec<f64> {
     let mut nodes = Vec::with_capacity(n);
     for k in 0..n {
+        // First compute the node on [-1, 1], then map it into [a, b].
         let x = ((2 * k + 1) as f64 * PI / (2 * n) as f64).cos();
         let x_transformed = 0.5 * (b - a) * x + 0.5 * (b + a);
         nodes.push(x_transformed);
@@ -17,6 +18,7 @@ fn chebyshev_nodes(n: usize, a: f64, b: f64) -> Vec<f64> {
 
 /// Linear transform from [a, b] to [-1, 1].
 fn transform_to_standard(x: f64, a: f64, b: f64) -> f64 {
+    // All coefficient math happens on the standard Chebyshev interval.
     2.0 * (x - a) / (b - a) - 1.0
 }
 
@@ -46,6 +48,7 @@ fn compute_chebyshev_coefficients(y: &[f64]) -> Vec<f64> {
     for k in 0..n {
         let mut sum = 0.0;
         for j in 0..n {
+            // This is the discrete cosine transform form of the Chebyshev fit.
             let angle = (k * (2 * j + 1)) as f64 * PI / (2 * n) as f64;
             sum += y[j] * (angle).cos();
         }
@@ -65,6 +68,7 @@ fn chebyshev_evaluate_clenshaw(coefficients: &[f64], x_std: f64) -> f64 {
     let mut b_k_plus_two = 0.0;
     let mut b_k_plus_one = 0.0;
     for k in (0..n).rev() {
+        // Backward recurrence keeps the evaluation numerically stable.
         let b_k = coefficients[k] + 2.0 * x_std * b_k_plus_one - b_k_plus_two;
         b_k_plus_two = b_k_plus_one;
         b_k_plus_one = b_k;
@@ -76,6 +80,7 @@ fn chebyshev_evaluate_clenshaw(coefficients: &[f64], x_std: f64) -> f64 {
 fn chebyshev_evaluate_direct(coefficients: &[f64], x_std: f64) -> f64 {
     let mut result = 0.0;
     for (k, &coef) in coefficients.iter().enumerate() {
+        // The direct path is simpler, but it is less stable than Clenshaw.
         result += coef * chebyshev_polynomial(k, x_std);
     }
     result
@@ -133,6 +138,7 @@ impl ChebyshevCore {
                 y.len()
             ));
         }
+        // The fit is a transform from sampled values to Chebyshev coefficients.
         self.coefficients = compute_chebyshev_coefficients(y);
         self.fitted = true;
         Ok(())
@@ -180,6 +186,7 @@ impl ChebyshevCore {
             return Err("Input/output length mismatch".into());
         }
         for (i, &value) in xs.iter().enumerate() {
+            // MATLAB and FFI use this path for batch evaluation.
             let x_std = self.ensure_in_range(value)?;
             out[i] = self.evaluate_impl(x_std);
         }

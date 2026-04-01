@@ -24,6 +24,9 @@ impl LinearCore {
             return Err("x and y cannot be empty".to_string());
         }
 
+        // Sorting upfront makes the later segment lookup a binary search
+        // instead of a linear scan. That is the main reason this core stays
+        // fast even when wrappers call it repeatedly.
         let mut is_sorted = true;
         for i in 0..x.len() - 1 {
             if x[i] >= x[i + 1] {
@@ -69,6 +72,8 @@ impl LinearCore {
             return Err("Interpolator not fitted. Call fit(x, y) first.".to_string());
         }
 
+        // Pairwise unrolling keeps the bulk path simple while avoiding a
+        // branch per element.
         let n = xs.len();
         let mut results = Vec::with_capacity(n);
         let mut i = 0;
@@ -106,6 +111,7 @@ impl LinearCore {
             return Err("input and output slices must have the same length".to_string());
         }
 
+        // This is the zero-copy path used by NumPy and MATLAB wrappers.
         let mut i = 0;
         while i + 1 < xs.len() {
             out[i] = linear_interpolate_single(&self.x_values, &self.y_values, &self.slopes, xs[i]);
@@ -130,6 +136,8 @@ impl LinearCore {
                 y.len()
             ));
         }
+        // Only the slopes change here. The x-grid remains valid, so there is
+        // no need to re-run the entire fit logic.
         self.slopes = (0..self.x_values.len() - 1)
             .map(|i| (y[i + 1] - y[i]) / (self.x_values[i + 1] - self.x_values[i]))
             .collect();
@@ -161,6 +169,7 @@ impl LinearCore {
             return Ok(());
         }
 
+        // Only the touched neighborhood needs updating.
         if idx == 0 {
             let new_slope =
                 (self.y_values[1] - self.y_values[0]) / (self.x_values[1] - self.x_values[0]);
@@ -212,6 +221,7 @@ fn linear_interpolate_single(x_values: &[f64], y_values: &[f64], slopes: &[f64],
         return y_values[n - 1];
     }
 
+    // Binary search is enough because `fit()` keeps the x-grid sorted.
     let idx = match x_values.binary_search_by(|v| v.partial_cmp(&x).unwrap()) {
         Ok(i) => {
             if i >= n - 1 {
@@ -229,6 +239,7 @@ fn linear_interpolate_single(x_values: &[f64], y_values: &[f64], slopes: &[f64],
         }
     };
 
+    // One slope and one left endpoint fully determine the segment value.
     y_values[idx] + slopes[idx] * (x - x_values[idx])
 }
 

@@ -11,6 +11,7 @@ pub enum RBFKernel {
 
 impl RBFKernel {
     fn evaluate(&self, r: f64, epsilon: f64) -> f64 {
+        // RBF kernels depend only on the distance between nodes.
         match self {
             RBFKernel::Gaussian => (-epsilon * epsilon * r * r).exp(),
             RBFKernel::Multiquadric => (1.0 + (epsilon * r).powi(2)).sqrt(),
@@ -94,6 +95,7 @@ impl RBFCore {
             return Err("x and y cannot be empty".into());
         }
 
+        // Fitting solves a dense kernel system to obtain one weight per sample.
         let weights = compute_rbf_weights(xs, ys, self.kernel, self.epsilon)?;
         self.x_values = xs.to_vec();
         self.weights = weights;
@@ -121,6 +123,7 @@ impl RBFCore {
         Ok(xs
             .iter()
             .map(|&value| {
+                // The scalar evaluation is reused for the bulk path.
                 rbf_evaluate(
                     &self.x_values,
                     &self.weights,
@@ -140,6 +143,7 @@ impl RBFCore {
             return Err("Interpolator not fitted".into());
         }
         for (value, slot) in xs.iter().zip(out.iter_mut()) {
+            // Keep the FFI/MATLAB path allocation-free.
             *slot = rbf_evaluate(
                 &self.x_values,
                 &self.weights,
@@ -194,6 +198,7 @@ impl RBFCore {
         if out.len() != self.weights.len() {
             return Err("Output length mismatch".into());
         }
+        // Expose the fitted weights directly for MATLAB inspection.
         out.copy_from_slice(&self.weights);
         Ok(())
     }
@@ -206,6 +211,7 @@ fn compute_rbf_weights(
     epsilon: f64,
 ) -> Result<Vec<f64>, String> {
     let n = x_values.len();
+    // Every point interacts with every other point in the kernel matrix.
     let mut matrix = vec![vec![0.0; n]; n];
     let diag = kernel.evaluate(0.0, epsilon);
     for i in 0..n {
@@ -261,6 +267,7 @@ fn solve_linear_system(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Result<Vec<f64>
 }
 
 fn rbf_evaluate(x_values: &[f64], weights: &[f64], kernel: RBFKernel, epsilon: f64, x: f64) -> f64 {
+    // Interpolation is the weighted sum of all kernel responses at x.
     let mut result = 0.0;
     for idx in 0..x_values.len() {
         let r = (x - x_values[idx]).abs();

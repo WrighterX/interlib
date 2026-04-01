@@ -27,6 +27,8 @@ impl NewtonCore {
             return Err("x and y cannot be empty".to_string());
         }
 
+        // Divided differences turn the sample table into Newton coefficients.
+        // Once this is computed, evaluation is just nested multiplication.
         self.coefficients = divided_differences(&x, &y);
         self.x_values = x;
         self.fitted = true;
@@ -107,6 +109,8 @@ fn divided_differences(xs: &[f64], ys: &[f64]) -> Vec<f64> {
     let n = xs.len();
     let mut coef = ys.to_vec();
 
+    // Each outer pass raises the order of the difference table by one.
+    // We update in place from the back so previously computed values stay valid.
     for j in 1..n {
         for i in (j..n).rev() {
             coef[i] = (coef[i] - coef[i - 1]) / (xs[i] - xs[i - j]);
@@ -121,6 +125,7 @@ fn newton_evaluate(xs: &[f64], coef: &[f64], x: f64) -> f64 {
     let n = coef.len();
     let mut result = coef[n - 1];
 
+    // Horner-style evaluation of the Newton basis.
     for i in (0..n - 1).rev() {
         result = result * (x - xs[i]) + coef[i];
     }
