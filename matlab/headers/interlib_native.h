@@ -76,6 +76,19 @@ int interlib_lagrange_eval(void* handle, double x, double* out_value);
 int interlib_lagrange_eval_many(void* handle, const double* x_ptr, size_t x_len, double* out_ptr);
 size_t interlib_lagrange_last_error(char* buffer, size_t buffer_len);
 
+void* interlib_least_squares_create(size_t degree);
+void interlib_least_squares_destroy(void* handle);
+int interlib_least_squares_fit(
+    void* handle,
+    const double* x_ptr,
+    size_t x_len,
+    const double* y_ptr,
+    size_t y_len
+);
+int interlib_least_squares_eval(void* handle, double x, double* out_value);
+int interlib_least_squares_eval_many(void* handle, const double* x_ptr, size_t x_len, double* out_ptr);
+size_t interlib_least_squares_last_error(char* buffer, size_t buffer_len);
+
 #ifdef __cplusplus
 }
 #endif

@@ -30,6 +30,12 @@ matlab-test-lagrange: matlab-build
 matlab-test-lagrange-batch: matlab-build
 	MATLAB_BATCH=1 bash ./scripts/run_matlab_lagrange_test.sh
 
+matlab-test-least-squares: matlab-build
+	MATLAB_CONTAINER=$${MATLAB_CONTAINER:-matlab-login} bash ./scripts/run_matlab_least_squares_test.sh
+
+matlab-test-least-squares-batch: matlab-build
+	MATLAB_BATCH=1 bash ./scripts/run_matlab_least_squares_test.sh
+
 matlab-test-quadratic: matlab-build
 	MATLAB_CONTAINER=$${MATLAB_CONTAINER:-matlab-login} bash ./scripts/run_matlab_quadratic_test.sh
 

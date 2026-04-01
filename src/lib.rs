@@ -4,6 +4,7 @@ mod quadratic_core;
 mod cubic_spline_core;
 mod hermite_core;
 mod lagrange_core;
+mod least_squares_core;
 mod ffi;
 mod matlab;
 #[cfg(feature = "python")]
@@ -20,6 +21,8 @@ mod cubic_spline;
 mod hermite;
 #[cfg(feature = "python")]
 mod lagrange;
+#[cfg(feature = "python")]
+mod least_squares;
 #[cfg(feature = "python")]
 mod least_squares;
 #[cfg(feature = "python")]
