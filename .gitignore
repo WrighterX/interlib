@@ -73,4 +73,6 @@ docs/_build/
 .python-version
 
 python/benches/benchmark_plots
+python/benches/data_cache/
+python/benches/benchmark_results/
 uv.lock

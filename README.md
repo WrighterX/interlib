@@ -19,6 +19,19 @@ Now, there are several use cases for it:
 
 Equip yourself for whatever you have at hand.
 
+## Real-Data Benchmarks
+
+The repository also includes a real-data benchmark entrypoint:
+
+```bash
+python python/benches/real_data_bench.py --dataset noaa --station KSFO --field temperature
+python python/benches/real_data_bench.py --dataset nasa --command 499 --axis x
+```
+
+These benchmarks download official public data from NOAA or NASA once, cache
+the snapshot locally, and benchmark interpolation against held-out real samples
+instead of synthetic `sin(x)` data.
+
 ## Examples
 To import the library into your code, include the following line:
 
