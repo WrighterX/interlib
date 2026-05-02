@@ -1,5 +1,6 @@
 mod chebyshev_core;
 mod cubic_spline_core;
+mod core_error;
 mod ffi;
 mod hermite_core;
 mod lagrange_core;
@@ -19,8 +20,6 @@ mod cubic_spline;
 mod hermite;
 #[cfg(feature = "python")]
 mod lagrange;
-#[cfg(feature = "python")]
-mod least_squares;
 #[cfg(feature = "python")]
 mod least_squares;
 #[cfg(feature = "python")]

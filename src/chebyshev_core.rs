@@ -193,6 +193,12 @@ impl ChebyshevCore {
         Ok(())
     }
 
+    pub(crate) fn evaluate_many(&self, xs: &[f64]) -> Result<Vec<f64>, String> {
+        let mut out = vec![0.0; xs.len()];
+        self.fill_many(xs, &mut out)?;
+        Ok(out)
+    }
+
     pub(crate) fn repr(&self) -> String {
         let method = if self.use_clenshaw {
             "Clenshaw"

@@ -1,6 +1,6 @@
 /// Python wrapper for the shared Chebyshev core.
 use crate::chebyshev_core::ChebyshevCore;
-use numpy::{PyArray1, PyReadonlyArray1};
+use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
@@ -69,14 +69,10 @@ impl ChebyshevInterpolator {
         }
 
         if let Ok(list) = x.extract::<Vec<f64>>() {
-            let mut results = Vec::with_capacity(list.len());
-            for value in list {
-                let result = self
-                    .core
-                    .evaluate_single(value)
-                    .map_err(PyValueError::new_err)?;
-                results.push(result);
-            }
+            let results = self
+                .core
+                .evaluate_many(&list)
+                .map_err(PyValueError::new_err)?;
             return Ok(results.into_pyobject(py)?.into_any().unbind());
         }
 

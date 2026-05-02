@@ -1,3 +1,5 @@
+use crate::core_error::CoreError;
+
 /// The supported radial basis function kernels.
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -75,7 +77,7 @@ pub(crate) struct RBFCore {
 impl RBFCore {
     pub(crate) fn new(kernel: RBFKernel, epsilon: f64) -> Result<Self, String> {
         if epsilon <= 0.0 {
-            return Err("epsilon must be positive".into());
+            return Err(CoreError::Message("epsilon must be positive".to_string()).into());
         }
 
         Ok(Self {
@@ -89,10 +91,23 @@ impl RBFCore {
 
     pub(crate) fn fit(&mut self, xs: &[f64], ys: &[f64]) -> Result<(), String> {
         if xs.len() != ys.len() {
-            return Err("x and y must have the same length".into());
+            return Err(CoreError::LengthMismatch {
+                left_name: "x",
+                left: xs.len(),
+                right_name: "y",
+                right: ys.len(),
+            }
+            .into());
         }
         if xs.is_empty() {
-            return Err("x and y cannot be empty".into());
+            return Err(CoreError::EmptyInput { what: "x and y" }.into());
+        }
+        let mut x_sorted = xs.to_vec();
+        x_sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        for i in 0..x_sorted.len().saturating_sub(1) {
+            if x_sorted[i] == x_sorted[i + 1] {
+                return Err(CoreError::DistinctNodesRequired { what: "x values" }.into());
+            }
         }
 
         // Fitting solves a dense kernel system to obtain one weight per sample.
@@ -105,7 +120,10 @@ impl RBFCore {
 
     pub(crate) fn evaluate_single(&self, value: f64) -> Result<f64, String> {
         if !self.fitted {
-            return Err("Interpolator not fitted".into());
+            return Err(CoreError::NotFitted {
+                hint: "Call fit(x, y) first.",
+            }
+            .into());
         }
         Ok(rbf_evaluate(
             &self.x_values,
@@ -118,7 +136,10 @@ impl RBFCore {
 
     pub(crate) fn evaluate_many(&self, xs: &[f64]) -> Result<Vec<f64>, String> {
         if !self.fitted {
-            return Err("Interpolator not fitted".into());
+            return Err(CoreError::NotFitted {
+                hint: "Call fit(x, y) first.",
+            }
+            .into());
         }
         Ok(xs
             .iter()
@@ -137,10 +158,19 @@ impl RBFCore {
 
     pub(crate) fn fill_many(&self, xs: &[f64], out: &mut [f64]) -> Result<(), String> {
         if xs.len() != out.len() {
-            return Err("Input/output length mismatch".into());
+            return Err(CoreError::LengthMismatch {
+                left_name: "input",
+                left: xs.len(),
+                right_name: "output",
+                right: out.len(),
+            }
+            .into());
         }
         if !self.fitted {
-            return Err("Interpolator not fitted".into());
+            return Err(CoreError::NotFitted {
+                hint: "Call fit(x, y) first.",
+            }
+            .into());
         }
         for (value, slot) in xs.iter().zip(out.iter_mut()) {
             // Keep the FFI/MATLAB path allocation-free.
@@ -157,17 +187,12 @@ impl RBFCore {
 
     pub(crate) fn weights(&self) -> Result<&[f64], String> {
         if !self.fitted {
-            return Err("Interpolator not fitted".into());
+            return Err(CoreError::NotFitted {
+                hint: "Call fit(x, y) first.",
+            }
+            .into());
         }
         Ok(&self.weights)
-    }
-
-    pub(crate) fn kernel(&self) -> RBFKernel {
-        self.kernel
-    }
-
-    pub(crate) fn epsilon(&self) -> f64 {
-        self.epsilon
     }
 
     pub(crate) fn repr(&self) -> String {
@@ -193,10 +218,19 @@ impl RBFCore {
 
     pub(crate) fn fill_weights(&self, out: &mut [f64]) -> Result<(), String> {
         if !self.fitted {
-            return Err("Interpolator not fitted".into());
+            return Err(CoreError::NotFitted {
+                hint: "Call fit(x, y) first.",
+            }
+            .into());
         }
         if out.len() != self.weights.len() {
-            return Err("Output length mismatch".into());
+            return Err(CoreError::LengthMismatch {
+                left_name: "weights",
+                left: self.weights.len(),
+                right_name: "output",
+                right: out.len(),
+            }
+            .into());
         }
         // Expose the fitted weights directly for MATLAB inspection.
         out.copy_from_slice(&self.weights);
@@ -244,7 +278,11 @@ fn solve_linear_system(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Result<Vec<f64>
             b.swap(k, max_idx);
         }
         if a[k][k].abs() < 1e-12 {
-            return Err("Matrix is singular or nearly singular".into());
+            return Err(CoreError::SingularSystem {
+                context: "RBF kernel matrix",
+                pivot_index: Some(k),
+            }
+            .into());
         }
         for i in k + 1..n {
             let factor = a[i][k] / a[k][k];
@@ -274,4 +312,36 @@ fn rbf_evaluate(x_values: &[f64], weights: &[f64], kernel: RBFKernel, epsilon: f
         result += weights[idx] * kernel.evaluate(r, epsilon);
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{solve_linear_system, RBFCore, RBFKernel};
+
+    #[test]
+    fn fit_and_evaluate_small_case() {
+        let mut core = RBFCore::new(RBFKernel::Gaussian, 1.0).unwrap();
+        core.fit(&[0.0, 1.0, 2.0], &[0.0, 1.0, 4.0]).unwrap();
+
+        let v = core.evaluate_single(1.0).unwrap();
+        assert!((v - 1.0).abs() < 1e-7);
+
+        let many = core.evaluate_many(&[0.0, 1.0, 2.0]).unwrap();
+        assert_eq!(many.len(), 3);
+    }
+
+    #[test]
+    fn duplicate_x_is_rejected() {
+        let mut core = RBFCore::new(RBFKernel::Gaussian, 1.0).unwrap();
+        let err = core.fit(&[0.0, 1.0, 1.0], &[0.0, 1.0, 4.0]).unwrap_err();
+        assert!(err.contains("distinct"));
+    }
+
+    #[test]
+    fn singular_system_reports_diagnostic_error() {
+        let err = solve_linear_system(vec![vec![1.0, 2.0], vec![2.0, 4.0]], vec![1.0, 2.0])
+            .unwrap_err();
+        assert!(err.contains("RBF kernel matrix"));
+        assert!(err.contains("pivot"));
+    }
 }

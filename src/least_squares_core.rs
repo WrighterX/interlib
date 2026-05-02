@@ -145,6 +145,10 @@ impl LeastSquaresCore {
         Ok(self.coefficients.clone())
     }
 
+    pub(crate) fn degree(&self) -> usize {
+        self.degree
+    }
+
     pub(crate) fn evaluate_single(&self, x: f64) -> Result<f64, String> {
         if !self.fitted {
             return Err("Interpolator not fitted".to_string());
@@ -170,6 +174,12 @@ impl LeastSquaresCore {
             out[i] = evaluate_polynomial(&self.coefficients, xs[i]);
         }
         Ok(())
+    }
+
+    pub(crate) fn evaluate_many(&self, xs: &[f64]) -> Result<Vec<f64>, String> {
+        let mut out = vec![0.0; xs.len()];
+        self.fill_many(xs, &mut out)?;
+        Ok(out)
     }
 
     pub(crate) fn r_squared(&self) -> Result<f64, String> {

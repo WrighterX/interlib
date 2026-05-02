@@ -151,6 +151,56 @@ nodes = interpolator.get_nodes()  # Chebyshev
 | Small datasets (< 10 points) | Any method |
 | Large datasets (> 100 points) | Linear, Cubic Spline |
 
+## Hands-On Mini Tutorials
+
+### Piecewise default (Linear/Cubic Spline)
+
+```python
+from interlib import LinearInterpolator, CubicSplineInterpolator
+
+x = [0.0, 1.0, 2.0, 3.0]
+y = [0.0, 1.0, 4.0, 9.0]
+
+lin = LinearInterpolator(); lin.fit(x, y)
+spl = CubicSplineInterpolator(); spl.fit(x, y)
+
+print(lin(1.5), lin([0.5, 1.5]))
+print(spl(1.5), spl([0.5, 1.5]))
+```
+
+### Noisy-data approximation (Least Squares)
+
+```python
+from interlib import LeastSquaresInterpolator
+
+ls = LeastSquaresInterpolator(degree=4)
+ls.fit(x, y)
+print(ls.r_squared())
+```
+
+### Derivative-aware interpolation (Hermite)
+
+```python
+from interlib import HermiteInterpolator
+
+h = HermiteInterpolator()
+h.fit(x, y, [0.0, 2.0, 4.0, 6.0])
+print(h(1.5))
+```
+
+### RBF and Chebyshev quick starts
+
+```python
+from interlib import RBFInterpolator, ChebyshevInterpolator
+
+rbf = RBFInterpolator(kernel="gaussian", epsilon=1.0)
+rbf.fit(x, y)
+
+cheb = ChebyshevInterpolator(n_points=8, x_min=0.0, x_max=3.0)
+nodes = cheb.get_nodes()
+cheb.fit([v * v for v in nodes])
+```
+
 ## Common Pitfalls
 
 ### Runge's Phenomenon

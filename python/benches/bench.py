@@ -27,9 +27,7 @@ from interlib import (
     QuadraticInterpolator,
     CubicSplineInterpolator,
     HermiteInterpolator,
-    LeastSquaresInterpolator,
     RBFInterpolator,
-    ChebyshevInterpolator
 )
 
 # Define method configurations
@@ -86,7 +84,7 @@ METHOD_CONFIGS = {
         'interlib_class': RBFInterpolator,
         'scipy_func': lambda x, y: ScipyRBFInterpolator(x.reshape(-1, 1), y, kernel="gaussian", epsilon=1.0),
         'default_sizes': [10, 20, 30],
-        'kwargs': {'interlib': {'kernel': 'gaussian', 'epsilon': 1.0}, 'scipy': {'kernel': 'gaussian', 'epsilon': 1.0}},
+        'kwargs': {'interlib': {'kernel': 'gaussian', 'epsilon': 1.0}, 'scipy': {}},
         'display_name': 'RBF Gaussian',
         'needs_derivs': False
     }
@@ -159,13 +157,15 @@ def measure_performance(
                 finally:
                     gc.enable()
                 
+                assert scipy_times is not None
                 scipy_times.append(np.median(sp_runs))
 
             sizes_ok.append(n)
 
         except Exception as e:
             print(f"  Failed at n={n}: {e}")
-            if gc.isenabled() == False: gc.enable() # Safety
+            if not gc.isenabled():
+                gc.enable()  # Safety
             continue
 
     return sizes_ok, interlib_times, scipy_times
@@ -182,14 +182,15 @@ def plot_performance_chart(
     print(f"  Processing {display_name}...")
 
     if len(sizes) < 2:
-        print(f"    Skipped - insufficient data points")
+        print("    Skipped - insufficient data points")
         return
 
     # Convert to milliseconds
     il_times_ms = [t * 1000 for t in il_times]
-    sp_times_ms = [t * 1000 for t in sp_times] if sp_times else None
+    sp_times_ms = [t * 1000 for t in sp_times] if sp_times is not None else None
+    has_scipy = sp_times_ms is not None and len(sp_times_ms) > 0
 
-    fig, axs = plt.subplots(1, 2 if sp_times else 1, figsize=(14 if sp_times else 7, 6))
+    fig, axs = plt.subplots(1, 2 if has_scipy else 1, figsize=(14 if has_scipy else 7, 6))
 
     if not isinstance(axs, np.ndarray):
         axs = [axs]
@@ -198,9 +199,11 @@ def plot_performance_chart(
     x_pos = np.arange(len(sizes))
     width = 0.35
 
-    bars1 = ax1.bar(x_pos - width/2 if sp_times else x_pos, il_times_ms, width if sp_times else 0.7, label='interlib',
+    bars1 = ax1.bar(x_pos - width/2 if has_scipy else x_pos, il_times_ms, width if has_scipy else 0.7, label='interlib',
                     color='#2E86AB', alpha=0.8)
-    if sp_times:
+    bars2 = None
+    if has_scipy:
+        assert sp_times_ms is not None
         bars2 = ax1.bar(x_pos + width/2, sp_times_ms, width, label='scipy',
                         color='#A23B72', alpha=0.8)
 
@@ -218,14 +221,15 @@ def plot_performance_chart(
         if height > 0:
             ax1.text(bar.get_x() + bar.get_width()/2., height,
                      f'{height:.2f}', ha='center', va='bottom', fontsize=8)
-    if sp_times:
+    if bars2 is not None:
         for bar in bars2:
             height = bar.get_height()
             if height > 0:
                 ax1.text(bar.get_x() + bar.get_width()/2., height,
                          f'{height:.2f}', ha='center', va='bottom', fontsize=8)
 
-    if sp_times:
+    if has_scipy:
+        assert sp_times_ms is not None
         ax2 = axs[1]
         speedups = [sp/il if il > 0 else 0 for sp, il in zip(sp_times_ms, il_times_ms)]
         colors = ['green' if s > 1 else 'red' for s in speedups]
@@ -314,7 +318,8 @@ def plot_scaling_chart(
 def plot_accuracy_chart(
     method_key,
     config,
-    output_dir
+    output_dir,
+    no_compare=False,
 ):
     display_name = config['display_name']
     print(f"  Processing {display_name} for accuracy...")
@@ -336,7 +341,7 @@ def plot_accuracy_chart(
 
         y_interlib = interlib_interp(x_test)
 
-        if not args.no_compare:
+        if not no_compare:
             scipy_interp = config['scipy_func'](x_train, y_train, **config['kwargs']['scipy'])
             y_scipy = scipy_interp(x_test)
         else:
@@ -345,11 +350,11 @@ def plot_accuracy_chart(
         # Calculate errors
         error_interlib = y_interlib - y_true
         rmse_interlib = np.sqrt(np.mean(error_interlib**2))
+        error_scipy = None
+        rmse_scipy = None
         if y_scipy is not None:
             error_scipy = y_scipy - y_true
             rmse_scipy = np.sqrt(np.mean(error_scipy**2))
-        else:
-            rmse_scipy = None
 
         # Create figure
         fig, axs = plt.subplots(3, 1, figsize=(12, 10))
@@ -368,7 +373,7 @@ def plot_accuracy_chart(
         # Middle plot: Error comparison
         axs[1].plot(x_test, error_interlib, linewidth=2, label=f'interlib (RMSE: {rmse_interlib:.6f})',
                  color='#2E86AB')
-        if y_scipy is not None:
+        if error_scipy is not None and rmse_scipy is not None:
             axs[1].plot(x_test, error_scipy, linewidth=2, label=f'scipy (RMSE: {rmse_scipy:.6f})',
                      color='#A23B72')
         axs[1].axhline(y=0, color='k', linestyle='--', linewidth=1, alpha=0.5)
@@ -381,7 +386,7 @@ def plot_accuracy_chart(
         abs_error_interlib = np.abs(error_interlib)
         axs[2].semilogy(x_test, abs_error_interlib, linewidth=2, label='interlib',
                      color='#2E86AB')
-        if y_scipy is not None:
+        if error_scipy is not None:
             abs_error_scipy = np.abs(error_scipy)
             axs[2].semilogy(x_test, abs_error_scipy, linewidth=2, label='scipy',
                          color='#A23B72')
@@ -444,7 +449,7 @@ def plot_summary_chart(
 
             method_names.append(method_key.capitalize())
             interlib_times.append(il_time)
-            if sp_time is not None:
+            if sp_time is not None and scipy_times is not None:
                 scipy_times.append(sp_time)
 
         except Exception as e:
@@ -456,9 +461,13 @@ def plot_summary_chart(
         x_pos = np.arange(len(method_names))
         width = 0.35
 
-        bars1 = ax.bar(x_pos - width/2 if scipy_times else x_pos, interlib_times, width if scipy_times else 0.7, label='interlib',
+        has_scipy = scipy_times is not None and len(scipy_times) > 0
+
+        bars1 = ax.bar(x_pos - width/2 if has_scipy else x_pos, interlib_times, width if has_scipy else 0.7, label='interlib',
                        color='#2E86AB', alpha=0.8)
-        if scipy_times:
+        bars2 = None
+        if has_scipy:
+            assert scipy_times is not None
             bars2 = ax.bar(x_pos + width/2, scipy_times, width, label='scipy',
                            color='#A23B72', alpha=0.8)
 
@@ -477,7 +486,7 @@ def plot_summary_chart(
             if height > 0:
                 ax.text(bar.get_x() + bar.get_width()/2., height,
                         f'{height:.3f}', ha='center', va='bottom', fontsize=9)
-        if scipy_times:
+        if bars2 is not None:
             for bar in bars2:
                 height = bar.get_height()
                 if height > 0:
@@ -544,7 +553,7 @@ def main():
         print("\nGenerating accuracy plots...")
         for method_key in selected_methods:
             config = METHOD_CONFIGS[method_key]
-            plot_accuracy_chart(method_key, config, args.output_dir)
+            plot_accuracy_chart(method_key, config, args.output_dir, no_compare=args.no_compare)
 
     if args.summary or run_all:
         plot_summary_chart(selected_methods, args, args.output_dir)

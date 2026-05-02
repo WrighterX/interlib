@@ -3,6 +3,10 @@
 This folder contains the MATLAB-side wrapper for the Rust C ABI
 interpolators.
 
+> MATLAB integration is separate from Python wheel distribution.
+> Python users install a PyO3/maturin wheel, while MATLAB users load the
+> standalone FFI native library (`libinterlib.so`/`interlib.dll`/`libinterlib.dylib`) through these `.m` wrappers.
+
 ## Usage
 
 Add this folder to the MATLAB path, then use:

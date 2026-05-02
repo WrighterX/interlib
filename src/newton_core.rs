@@ -43,26 +43,9 @@ impl NewtonCore {
     }
 
     pub(crate) fn evaluate_many(&self, xs: &[f64]) -> Result<Vec<f64>, String> {
-        if !self.fitted {
-            return Err("Interpolator not fitted. Call fit(x, y) first.".to_string());
-        }
-
-        let n = xs.len();
-        let mut results = Vec::with_capacity(n);
-        let mut i = 0;
-        while i + 1 < n {
-            results.push(newton_evaluate(&self.x_values, &self.coefficients, xs[i]));
-            results.push(newton_evaluate(
-                &self.x_values,
-                &self.coefficients,
-                xs[i + 1],
-            ));
-            i += 2;
-        }
-        if i < n {
-            results.push(newton_evaluate(&self.x_values, &self.coefficients, xs[i]));
-        }
-        Ok(results)
+        let mut out = vec![0.0; xs.len()];
+        self.fill_many(xs, &mut out)?;
+        Ok(out)
     }
 
     pub(crate) fn fill_many(&self, xs: &[f64], out: &mut [f64]) -> Result<(), String> {
@@ -142,5 +125,24 @@ mod tests {
         core.fit(vec![0.0, 1.0, 2.0], vec![0.0, 1.0, 4.0]).unwrap();
         assert!((core.evaluate_single(0.5).unwrap() - 0.25).abs() < 1e-12);
         assert!((core.evaluate_single(1.5).unwrap() - 2.25).abs() < 1e-12);
+    }
+
+    #[test]
+    fn evaluate_many_and_fill_many_match_scalar_path() {
+        let mut core = NewtonCore::new();
+        core.fit(vec![0.0, 1.0, 2.0], vec![0.0, 1.0, 4.0]).unwrap();
+
+        let xs = vec![-1.0, 0.25, 1.25, 2.5];
+        let scalar: Vec<f64> = xs
+            .iter()
+            .map(|&x| core.evaluate_single(x).unwrap())
+            .collect();
+
+        let many = core.evaluate_many(&xs).unwrap();
+        assert_eq!(many, scalar);
+
+        let mut out = vec![0.0; xs.len()];
+        core.fill_many(&xs, &mut out).unwrap();
+        assert_eq!(out, scalar);
     }
 }

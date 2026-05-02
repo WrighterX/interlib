@@ -1,3 +1,5 @@
+use crate::core_error::CoreError;
+
 #[derive(Clone, Debug)]
 pub(crate) struct LinearCore {
     x_values: Vec<f64>,
@@ -18,10 +20,16 @@ impl LinearCore {
 
     pub(crate) fn fit(&mut self, x: Vec<f64>, y: Vec<f64>) -> Result<(), String> {
         if x.len() != y.len() {
-            return Err("x and y must have the same length".to_string());
+            return Err(CoreError::LengthMismatch {
+                left_name: "x",
+                left: x.len(),
+                right_name: "y",
+                right: y.len(),
+            }
+            .into());
         }
         if x.is_empty() {
-            return Err("x and y cannot be empty".to_string());
+            return Err(CoreError::EmptyInput { what: "x and y" }.into());
         }
 
         // Sorting upfront makes the later segment lookup a binary search
@@ -46,6 +54,12 @@ impl LinearCore {
             (x, y)
         };
 
+        for i in 0..x.len().saturating_sub(1) {
+            if x[i] == x[i + 1] {
+                return Err(CoreError::DistinctNodesRequired { what: "x values" }.into());
+            }
+        }
+
         self.slopes = (0..x.len() - 1)
             .map(|i| (y[i + 1] - y[i]) / (x[i + 1] - x[i]))
             .collect();
@@ -57,7 +71,10 @@ impl LinearCore {
 
     pub(crate) fn evaluate_single(&self, x: f64) -> Result<f64, String> {
         if !self.fitted {
-            return Err("Interpolator not fitted. Call fit(x, y) first.".to_string());
+            return Err(CoreError::NotFitted {
+                hint: "Call fit(x, y) first.",
+            }
+            .into());
         }
         Ok(linear_interpolate_single(
             &self.x_values,
@@ -68,50 +85,42 @@ impl LinearCore {
     }
 
     pub(crate) fn evaluate_many(&self, xs: &[f64]) -> Result<Vec<f64>, String> {
-        if !self.fitted {
-            return Err("Interpolator not fitted. Call fit(x, y) first.".to_string());
-        }
-
-        // Pairwise unrolling keeps the bulk path simple while avoiding a
-        // branch per element.
-        let n = xs.len();
-        let mut results = Vec::with_capacity(n);
-        let mut i = 0;
-        while i + 1 < n {
-            results.push(linear_interpolate_single(
-                &self.x_values,
-                &self.y_values,
-                &self.slopes,
-                xs[i],
-            ));
-            results.push(linear_interpolate_single(
-                &self.x_values,
-                &self.y_values,
-                &self.slopes,
-                xs[i + 1],
-            ));
-            i += 2;
-        }
-        if i < n {
-            results.push(linear_interpolate_single(
-                &self.x_values,
-                &self.y_values,
-                &self.slopes,
-                xs[i],
-            ));
-        }
-        Ok(results)
+        let mut out = vec![0.0; xs.len()];
+        self.fill_many(xs, &mut out)?;
+        Ok(out)
     }
 
     pub(crate) fn fill_many(&self, xs: &[f64], out: &mut [f64]) -> Result<(), String> {
         if !self.fitted {
-            return Err("Interpolator not fitted. Call fit(x, y) first.".to_string());
+            return Err(CoreError::NotFitted {
+                hint: "Call fit(x, y) first.",
+            }
+            .into());
         }
         if xs.len() != out.len() {
-            return Err("input and output slices must have the same length".to_string());
+            return Err(CoreError::LengthMismatch {
+                left_name: "input",
+                left: xs.len(),
+                right_name: "output",
+                right: out.len(),
+            }
+            .into());
         }
 
-        // This is the zero-copy path used by NumPy and MATLAB wrappers.
+        // For monotonic query grids, advance a single segment cursor instead
+        // of running a binary search for every point.
+        if is_non_decreasing(xs) {
+            linear_fill_many_sorted(
+                &self.x_values,
+                &self.y_values,
+                &self.slopes,
+                xs,
+                out,
+            );
+            return Ok(());
+        }
+
+        // Fallback path for unordered input.
         let mut i = 0;
         while i + 1 < xs.len() {
             out[i] = linear_interpolate_single(&self.x_values, &self.y_values, &self.slopes, xs[i]);
@@ -127,7 +136,10 @@ impl LinearCore {
 
     pub(crate) fn update_y(&mut self, y: Vec<f64>) -> Result<(), String> {
         if !self.fitted {
-            return Err("Interpolator not fitted. Call fit(x, y) first.".to_string());
+            return Err(CoreError::NotFitted {
+                hint: "Call fit(x, y) first.",
+            }
+            .into());
         }
         if y.len() != self.x_values.len() {
             return Err(format!(
@@ -147,7 +159,10 @@ impl LinearCore {
 
     pub(crate) fn add_point(&mut self, x_new: f64, y_new: f64) -> Result<(), String> {
         if !self.fitted {
-            return Err("Interpolator not fitted. Call fit(x, y) first.".to_string());
+            return Err(CoreError::NotFitted {
+                hint: "Call fit(x, y) first.",
+            }
+            .into());
         }
 
         let idx = match self
@@ -243,6 +258,46 @@ fn linear_interpolate_single(x_values: &[f64], y_values: &[f64], slopes: &[f64],
     y_values[idx] + slopes[idx] * (x - x_values[idx])
 }
 
+#[inline]
+fn is_non_decreasing(values: &[f64]) -> bool {
+    values.windows(2).all(|w| w[0] <= w[1])
+}
+
+fn linear_fill_many_sorted(
+    x_values: &[f64],
+    y_values: &[f64],
+    slopes: &[f64],
+    xs: &[f64],
+    out: &mut [f64],
+) {
+    let n = x_values.len();
+    if n == 0 {
+        out.fill(f64::NAN);
+        return;
+    }
+    if n == 1 {
+        out.fill(y_values[0]);
+        return;
+    }
+
+    let mut seg = 0usize;
+    for (i, &x) in xs.iter().enumerate() {
+        if x <= x_values[0] {
+            out[i] = y_values[0];
+            continue;
+        }
+        if x >= x_values[n - 1] {
+            out[i] = y_values[n - 1];
+            continue;
+        }
+
+        while seg + 1 < n - 1 && x > x_values[seg + 1] {
+            seg += 1;
+        }
+        out[i] = y_values[seg] + slopes[seg] * (x - x_values[seg]);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::LinearCore;
@@ -266,5 +321,34 @@ mod tests {
         core.add_point(1.5, 3.0).unwrap();
         assert_eq!(core.evaluate_single(1.5).unwrap(), 3.0);
         assert!(core.repr().contains("fitted with 4 points"));
+    }
+
+    #[test]
+    fn evaluate_many_and_fill_many_match_scalar_path() {
+        let mut core = LinearCore::new();
+        core.fit(vec![0.0, 1.0, 2.0, 3.0], vec![0.0, 1.0, 4.0, 9.0])
+            .unwrap();
+
+        let xs = vec![-1.0, 0.5, 1.5, 3.0, 4.0];
+        let scalar: Vec<f64> = xs
+            .iter()
+            .map(|&x| core.evaluate_single(x).unwrap())
+            .collect();
+
+        let many = core.evaluate_many(&xs).unwrap();
+        assert_eq!(many, scalar);
+
+        let mut out = vec![0.0; xs.len()];
+        core.fill_many(&xs, &mut out).unwrap();
+        assert_eq!(out, scalar);
+
+        let xs_unsorted = vec![1.5, -1.0, 4.0, 0.5, 3.0];
+        let scalar_unsorted: Vec<f64> = xs_unsorted
+            .iter()
+            .map(|&x| core.evaluate_single(x).unwrap())
+            .collect();
+        let mut out_unsorted = vec![0.0; xs_unsorted.len()];
+        core.fill_many(&xs_unsorted, &mut out_unsorted).unwrap();
+        assert_eq!(out_unsorted, scalar_unsorted);
     }
 }

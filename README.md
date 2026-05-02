@@ -3,96 +3,101 @@
 
 interlib is a Python library for interpolation methods designed as an alternative to scipy.interpolate. Being built on Rust, it provides reliable and in some cases faster solutions to unknown data point problems. It includes polynomial, piecewise, approximation-based and advanced interpolators for all of your needs.
 
-## Usage
-All of the library's built-in functions work out of the box, so the only thing you have to do is to import interlib into your project. You can do that by downloading .whl file from the releases section.
+## Installation
 
-Go to the directory where you have downloaded the wheel file, and use `pip install interlib-0.1.0-cp312-cp312-win_amd64.whl`.
+### End users (wheel)
 
-Congratulations, you have installed interlib into your system!
+Install from a built wheel:
 
-Now, there are several use cases for it:
+```bash
+pip install interlib-<version>-<platform>.whl
+```
 
-- Numerical calculations for real-world problems.
-- Engineering datasets interpolation (e.g. temperature data).
-- Signal reconstruction from sampled data.
-- Etc...
+### Local development (recommended)
 
-Equip yourself for whatever you have at hand.
+From `interlib/`:
+
+```bash
+.venv/bin/python -m maturin develop
+```
+
+This rebuilds and installs the extension in editable mode inside the project venv.
+
+## Python API Quickstart
+
+```python
+from interlib import LinearInterpolator
+
+interp = LinearInterpolator()
+interp.fit([0.0, 1.0, 2.0], [0.0, 1.0, 4.0])
+
+# scalar input -> float
+y1 = interp(1.5)
+
+# sequence input -> ordered list[float]
+y_many = interp([0.5, 1.5])
+```
+
+Common user errors are reported as `ValueError` (for example: unfitted usage,
+length mismatch, invalid constructor parameters, out-of-range Chebyshev input).
+
+## Tutorial by Method Family
+
+- **Polynomial exact-fit** (`LagrangeInterpolator`, `NewtonInterpolator`):
+  good for small clean datasets; can oscillate at high degree/uniform nodes.
+- **Piecewise local** (`LinearInterpolator`, `QuadraticInterpolator`, `CubicSplineInterpolator`):
+  robust defaults for many engineering signals; cubic spline is the smoothest common default.
+- **Derivative-constrained** (`HermiteInterpolator`): use when you know `dy` at sample points.
+- **Approximation/noisy data** (`LeastSquaresInterpolator`): fit trend instead of exact point pass-through.
+- **Kernel/global** (`RBFInterpolator`): flexible smooth interpolation; kernel/epsilon tuning matters.
+- **Chebyshev function approximation** (`ChebyshevInterpolator`): stable high-accuracy approximation over fixed interval.
+
+See `GUIDE.md` for a fuller selection guide and pitfalls.
 
 ## Real-Data Benchmarks
 
-The repository also includes a real-data benchmark entrypoint:
+The repository includes cached real-data benchmark entrypoints:
 
 ```bash
 python python/benches/real_data_bench.py --dataset noaa --station KSFO --field temperature
 python python/benches/real_data_bench.py --dataset nasa --command 499 --axis x
 ```
 
-These benchmarks download official public data from NOAA or NASA once, cache
-the snapshot locally, and benchmark interpolation against held-out real samples
-instead of synthetic `sin(x)` data.
+These benchmark against held-out real observations (NOAA/NASA) instead of only synthetic functions.
 
-## Examples
-To import the library into your code, include the following line:
+## Case Studies
 
-```python
-import interlib
+Runnable case studies:
+
+- `python/case_studies/function_approx.py` (includes `cos(x)` and Runge function)
+- `python/case_studies/signal_rec.py` (sampled signal reconstruction)
+- `python/case_studies/engineering.py` (engineering-style datasets, including temperature profiles)
+
+## MATLAB Integration (important distinction)
+
+MATLAB integration is **not** the Python wheel path.
+
+- Python uses **PyO3 + maturin wheels**.
+- MATLAB uses **standalone Rust FFI shared library + MATLAB `.m` wrappers**.
+
+MATLAB build path:
+
+```bash
+make matlab-build
 ```
 
-Or, if you want to import a concrete method, you can use the following:
+MATLAB docs:
 
-```python
-from interlib import LagrangeInterpolator
-```
-
-The ways to use the library's methods are generally the same across all of them. Let's take `LagrangeInterpolator` as an example. First, we have to create an instance:
-
-```python
-interp = LagrangeInterpolator()
-```
-
-Then we have to define known data points to fit them into the said instance:
-
-```python
-x = [1.0, 2.0, 3.0]
-y = [1.0, 4.0, 9.0]
-interp.fit(x, y)
-```
-
-Done! Now we can get the value at any point x. The `LagrangeInterpolator`, like most of the interlib's methods, can have scalar values *or* lists as parameters:
-
-```python
-# Evaluate at a single point
-unknown_y = interp(4.0)
-print(f"Interpolated value at x=4: {unknown_y}")
-
-# Evaluate at multiple points
-x_new = [1.5, 2.5, 3.5, 4.0]
-y_new = interp(x_new)
-print(f"Interpolated values: {y_new}")
-```
-
-at your option and use case.
-
-## MATLAB Testing
-
-The repo also includes a MATLAB smoke test for the linear prototype, runnable
-via Docker with a MathWorks MATLAB image. For Login Named User licensing, use
-the interactive container workflow documented in the MATLAB note.
-
-See [matlab/MATLAB_DOCKER.md](/home/tret/Code/allcode/rusting_away/uni_diploma/interlib/matlab/MATLAB_DOCKER.md).
+- `matlab/README.md`
+- `matlab/MATLAB_DOCKER.md`
 
 ## MATLAB Release Notes
 
-GitHub Actions is currently intended to build the standalone Rust MATLAB/FFI
-binaries only. The `.mltbx` toolbox package is built locally from a licensed
-MATLAB runtime.
-
-Use:
+GitHub Actions currently targets standalone Rust MATLAB/FFI binaries.
+The `.mltbx` toolbox package is built locally from a licensed MATLAB runtime:
 
 ```bash
 MATLAB_IMAGE=my-matlab-image:auth make matlab-toolbox-package-batch
 ```
 
-That command writes the toolbox to
-[`dist/interlib.mltbx`](/home/tret/Code/allcode/rusting_away/uni_diploma/interlib/dist/interlib.mltbx).
+This writes `dist/interlib.mltbx`.

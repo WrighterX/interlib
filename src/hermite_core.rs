@@ -83,19 +83,8 @@ impl HermiteCore {
     }
 
     pub(crate) fn evaluate_many(&self, xs: &[f64]) -> Result<Vec<f64>, String> {
-        let mut out = Vec::with_capacity(xs.len());
-        let mut i = 0;
-        let z = &self.z_values;
-        let coeff = &self.coefficients;
-
-        while i + 1 < xs.len() {
-            out.push(hermite_evaluate(z, coeff, xs[i]));
-            out.push(hermite_evaluate(z, coeff, xs[i + 1]));
-            i += 2;
-        }
-        if i < xs.len() {
-            out.push(hermite_evaluate(z, coeff, xs[i]));
-        }
+        let mut out = vec![0.0; xs.len()];
+        self.fill_many(xs, &mut out)?;
         Ok(out)
     }
 
@@ -191,4 +180,39 @@ fn hermite_evaluate(z: &[f64], coefficients: &[f64], x: f64) -> f64 {
         result = result * (x - z[i]) + coefficients[i];
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::HermiteCore;
+
+    #[test]
+    fn fit_and_evaluates() {
+        let mut core = HermiteCore::new();
+        core.fit(vec![0.0, 1.0, 2.0], vec![0.0, 1.0, 4.0], vec![0.0, 2.0, 4.0])
+            .unwrap();
+
+        let v = core.evaluate_single(1.5).unwrap();
+        assert!(v.is_finite());
+    }
+
+    #[test]
+    fn evaluate_many_and_fill_many_match_scalar_path() {
+        let mut core = HermiteCore::new();
+        core.fit(vec![0.0, 1.0, 2.0], vec![0.0, 1.0, 4.0], vec![0.0, 2.0, 4.0])
+            .unwrap();
+
+        let xs = vec![0.0, 0.5, 1.5, 2.0];
+        let scalar: Vec<f64> = xs
+            .iter()
+            .map(|&x| core.evaluate_single(x).unwrap())
+            .collect();
+
+        let many = core.evaluate_many(&xs).unwrap();
+        assert_eq!(many, scalar);
+
+        let mut out = vec![0.0; xs.len()];
+        core.fill_many(&xs, &mut out).unwrap();
+        assert_eq!(out, scalar);
+    }
 }

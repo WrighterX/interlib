@@ -106,31 +106,8 @@ impl LagrangeCore {
     }
 
     pub(crate) fn evaluate_many(&self, xs: &[f64]) -> Result<Vec<f64>, String> {
-        let mut out = Vec::with_capacity(xs.len());
-        let mut i = 0;
-        while i + 1 < xs.len() {
-            out.push(barycentric_eval(
-                &self.x_values,
-                &self.y_values,
-                &self.weights,
-                xs[i],
-            ));
-            out.push(barycentric_eval(
-                &self.x_values,
-                &self.y_values,
-                &self.weights,
-                xs[i + 1],
-            ));
-            i += 2;
-        }
-        if i < xs.len() {
-            out.push(barycentric_eval(
-                &self.x_values,
-                &self.y_values,
-                &self.weights,
-                xs[i],
-            ));
-        }
+        let mut out = vec![0.0; xs.len()];
+        self.fill_many(xs, &mut out)?;
         Ok(out)
     }
 

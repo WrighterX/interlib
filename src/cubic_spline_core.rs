@@ -73,22 +73,9 @@ impl CubicSplineCore {
     }
 
     pub(crate) fn evaluate_many(&self, xs: &[f64]) -> Result<Vec<f64>, String> {
-        if !self.fitted {
-            return Err("Interpolator not fitted. Call fit(x, y) first.".to_string());
-        }
-
-        let n = xs.len();
-        let mut results = Vec::with_capacity(n);
-        let mut i = 0;
-        while i + 1 < n {
-            results.push(self.eval_internal(xs[i]));
-            results.push(self.eval_internal(xs[i + 1]));
-            i += 2;
-        }
-        if i < n {
-            results.push(self.eval_internal(xs[i]));
-        }
-        Ok(results)
+        let mut out = vec![0.0; xs.len()];
+        self.fill_many(xs, &mut out)?;
+        Ok(out)
     }
 
     pub(crate) fn fill_many(&self, xs: &[f64], out: &mut [f64]) -> Result<(), String> {
@@ -97,6 +84,11 @@ impl CubicSplineCore {
         }
         if xs.len() != out.len() {
             return Err("input and output slices must have the same length".to_string());
+        }
+
+        if is_non_decreasing(xs) {
+            self.fill_many_sorted(xs, out);
+            return Ok(());
         }
 
         let mut i = 0;
@@ -109,6 +101,27 @@ impl CubicSplineCore {
             out[i] = self.eval_internal(xs[i]);
         }
         Ok(())
+    }
+
+    fn fill_many_sorted(&self, xs: &[f64], out: &mut [f64]) {
+        let n = self.x_values.len();
+        let mut seg = 0usize;
+
+        for (i, &x) in xs.iter().enumerate() {
+            if x <= self.x_values[0] {
+                out[i] = self.segments[0].eval(x);
+                continue;
+            }
+            if x >= self.x_values[n - 1] {
+                out[i] = self.segments[n - 2].eval(x);
+                continue;
+            }
+
+            while seg + 1 < n - 1 && x > self.x_values[seg + 1] {
+                seg += 1;
+            }
+            out[i] = self.segments[seg].eval(x);
+        }
     }
 
     #[inline]
@@ -268,6 +281,11 @@ fn compute_not_a_knot_spline(x: &[f64], y: &[f64]) -> Vec<SplineSegment> {
     segments
 }
 
+#[inline]
+fn is_non_decreasing(values: &[f64]) -> bool {
+    values.windows(2).all(|w| w[0] <= w[1])
+}
+
 #[cfg(test)]
 mod tests {
     use super::CubicSplineCore;
@@ -282,5 +300,37 @@ mod tests {
         .unwrap();
         assert!((core.evaluate_single(0.5).unwrap() - 0.25).abs() < 1e-12);
         assert!((core.evaluate_single(2.5).unwrap() - 6.25).abs() < 1e-12);
+    }
+
+    #[test]
+    fn evaluate_many_and_fill_many_match_scalar_path() {
+        let mut core = CubicSplineCore::new();
+        core.fit(
+            vec![0.0, 1.0, 2.0, 3.0, 4.0],
+            vec![0.0, 1.0, 4.0, 9.0, 16.0],
+        )
+        .unwrap();
+
+        let xs = vec![-1.0, 0.5, 1.5, 2.5, 4.0, 5.0];
+        let scalar: Vec<f64> = xs
+            .iter()
+            .map(|&x| core.evaluate_single(x).unwrap())
+            .collect();
+
+        let many = core.evaluate_many(&xs).unwrap();
+        assert_eq!(many, scalar);
+
+        let mut out = vec![0.0; xs.len()];
+        core.fill_many(&xs, &mut out).unwrap();
+        assert_eq!(out, scalar);
+
+        let xs_unsorted = vec![2.5, -1.0, 5.0, 1.5, 0.5, 4.0];
+        let scalar_unsorted: Vec<f64> = xs_unsorted
+            .iter()
+            .map(|&x| core.evaluate_single(x).unwrap())
+            .collect();
+        let mut out_unsorted = vec![0.0; xs_unsorted.len()];
+        core.fill_many(&xs_unsorted, &mut out_unsorted).unwrap();
+        assert_eq!(out_unsorted, scalar_unsorted);
     }
 }

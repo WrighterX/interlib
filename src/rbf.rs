@@ -5,7 +5,7 @@
 /// between the Python bindings and the MATLAB/FFI layers. Supported kernels are
 /// Gaussian, multiquadric, inverse multiquadric, thin plate spline, and linear.
 use crate::rbf_core::{RBFCore, RBFKernel};
-use numpy::{PyArray1, PyReadonlyArray1};
+use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;

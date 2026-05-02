@@ -28,7 +28,7 @@ impl LeastSquaresInterpolator {
     }
 
     pub fn get_degree(&self) -> usize {
-        self.core.degree
+        self.core.degree()
     }
 
     pub fn r_squared(&self) -> PyResult<f64> {
