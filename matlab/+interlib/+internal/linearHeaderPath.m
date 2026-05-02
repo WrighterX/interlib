@@ -1,3 +1,3 @@
 function path = linearHeaderPath()
-path = interlib.internal.nativeHeaderPath();
+path = interlib.internal.genericHeaderPath('linear');
 end

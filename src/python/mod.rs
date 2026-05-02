@@ -1,0 +1,10 @@
+pub mod chebyshev;
+pub mod cubic_spline;
+pub mod hermite;
+pub mod lagrange;
+pub mod least_squares;
+pub mod linear;
+pub mod newton;
+pub mod pywrap_macros;
+pub mod quadratic;
+pub mod rbf;

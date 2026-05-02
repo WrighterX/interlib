@@ -1,3 +1,3 @@
 function path = rbfHeaderPath()
-path = interlib.internal.nativeHeaderPath();
+path = interlib.internal.genericHeaderPath('rbf');
 end

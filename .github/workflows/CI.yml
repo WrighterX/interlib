@@ -133,6 +133,23 @@ jobs:
           name: wheels-macos-${{ matrix.platform.target }}
           path: dist
 
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.12.4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Run Rust tests
+        run: cargo test
+      - name: Run Python tests
+        run: |
+          pip install maturin numpy
+          maturin develop
+          python python/tests/test_api.py
+
   sdist:
     runs-on: ubuntu-latest
     steps:

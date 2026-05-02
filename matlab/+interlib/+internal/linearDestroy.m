@@ -1,7 +1,3 @@
 function linearDestroy(handle)
-if isempty(handle)
-    return;
+interlib.internal.genericDestroy(handle, 'linear');
 end
-
-alias = interlib.internal.linearAlias();
-calllib(alias, 'interlib_linear_destroy', handle);

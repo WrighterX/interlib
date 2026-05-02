@@ -1,3 +1,3 @@
 function alias = quadraticAlias()
-alias = 'interlib_quadratic';
+alias = interlib.internal.nativeAlias();
 end

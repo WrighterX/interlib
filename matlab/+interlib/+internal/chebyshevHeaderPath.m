@@ -1,3 +1,3 @@
 function path = chebyshevHeaderPath()
-path = interlib.internal.nativeHeaderPath();
+path = interlib.internal.genericHeaderPath('chebyshev');
 end

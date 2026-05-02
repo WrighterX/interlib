@@ -1,7 +1,7 @@
 .PHONY: matlab-build matlab-session matlab-test matlab-test-batch matlab-test-installation matlab-test-installation-batch matlab-test-newton matlab-test-newton-batch matlab-test-quadratic matlab-test-quadratic-batch matlab-test-cubic-spline matlab-test-cubic-spline-batch matlab-test-rbf matlab-test-rbf-batch matlab-test-chebyshev matlab-test-chebyshev-batch matlab-toolbox-stage matlab-toolbox-build matlab-toolbox-package matlab-toolbox-package-batch
 
 matlab-build:
-	CARGO_TARGET_DIR="$(CURDIR)/target/matlab" cargo build --lib --no-default-features --features ffi
+	CARGO_TARGET_DIR="$(CURDIR)/target/matlab" cargo build --lib --no-default-features --features matlab
 
 matlab-toolbox-stage: matlab-build
 	bash ./scripts/stage_matlab_toolbox.sh

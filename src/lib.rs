@@ -1,35 +1,10 @@
-mod chebyshev_core;
-mod cubic_spline_core;
-mod core_error;
-mod ffi;
-mod hermite_core;
-mod lagrange_core;
-mod least_squares_core;
-mod linear_core;
+mod core;
 mod matlab;
-mod newton_core;
-mod quadratic_core;
-mod rbf_core;
+#[cfg(feature = "python")]
+mod python;
+
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-#[cfg(feature = "python")]
-mod chebyshev;
-#[cfg(feature = "python")]
-mod cubic_spline;
-#[cfg(feature = "python")]
-mod hermite;
-#[cfg(feature = "python")]
-mod lagrange;
-#[cfg(feature = "python")]
-mod least_squares;
-#[cfg(feature = "python")]
-mod linear;
-#[cfg(feature = "python")]
-mod newton;
-#[cfg(feature = "python")]
-mod quadratic;
-#[cfg(feature = "python")]
-mod rbf;
 
 /// A high-performance Python interpolation library implemented in Rust.
 ///
@@ -45,14 +20,14 @@ mod rbf;
 #[pymodule]
 #[pyo3(name = "interlib")]
 fn interlib(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<linear::LinearInterpolator>()?;
-    m.add_class::<lagrange::LagrangeInterpolator>()?;
-    m.add_class::<newton::NewtonInterpolator>()?;
-    m.add_class::<quadratic::QuadraticInterpolator>()?;
-    m.add_class::<cubic_spline::CubicSplineInterpolator>()?;
-    m.add_class::<hermite::HermiteInterpolator>()?;
-    m.add_class::<least_squares::LeastSquaresInterpolator>()?;
-    m.add_class::<rbf::RBFInterpolator>()?;
-    m.add_class::<chebyshev::ChebyshevInterpolator>()?;
+    m.add_class::<python::linear::LinearInterpolator>()?;
+    m.add_class::<python::lagrange::LagrangeInterpolator>()?;
+    m.add_class::<python::newton::NewtonInterpolator>()?;
+    m.add_class::<python::quadratic::QuadraticInterpolator>()?;
+    m.add_class::<python::cubic_spline::CubicSplineInterpolator>()?;
+    m.add_class::<python::hermite::HermiteInterpolator>()?;
+    m.add_class::<python::least_squares::LeastSquaresInterpolator>()?;
+    m.add_class::<python::rbf::RBFInterpolator>()?;
+    m.add_class::<python::chebyshev::ChebyshevInterpolator>()?;
     Ok(())
 }

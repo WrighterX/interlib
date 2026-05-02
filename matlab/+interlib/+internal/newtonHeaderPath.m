@@ -1,3 +1,3 @@
 function path = newtonHeaderPath()
-path = interlib.internal.nativeHeaderPath();
+path = interlib.internal.genericHeaderPath('newton');
 end

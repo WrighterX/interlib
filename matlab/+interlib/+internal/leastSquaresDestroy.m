@@ -1,4 +1,3 @@
 function leastSquaresDestroy(handle)
-alias = interlib.internal.leastSquaresAlias();
-calllib(alias, 'interlib_least_squares_destroy', handle);
+interlib.internal.genericDestroy(handle, 'least_squares');
 end
