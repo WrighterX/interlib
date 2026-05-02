@@ -76,3 +76,4 @@ python/benches/benchmark_plots
 python/benches/data_cache/
 python/benches/benchmark_results/
 uv.lock
+AGENTS.md
