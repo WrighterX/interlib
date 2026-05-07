@@ -4,7 +4,6 @@ Visual Comparison Benchmark: interlib vs scipy.interpolate
 Generates side-by-side comparison plots showing performance and accuracy
 differences between interlib and scipy implementations.
 """
-import gc
 import argparse
 import time
 import numpy as np
@@ -17,8 +16,9 @@ from scipy.interpolate import (
     CubicSpline as ScipyCubicSpline,
     RBFInterpolator as ScipyRBFInterpolator,
     interp1d,
-    PchipInterpolator
-)#scipy has no chebyshev, least squared ambigiuous alternative
+    PchipInterpolator,
+)
+from numpy.polynomial import Chebyshev as ChebSeries, Polynomial
 
 from interlib import (
     LagrangeInterpolator,
@@ -28,14 +28,50 @@ from interlib import (
     CubicSplineInterpolator,
     HermiteInterpolator,
     RBFInterpolator,
+    ChebyshevInterpolator,
+    LeastSquaresInterpolator,
 )
+
+
+# Helper: scipy RBFInterpolator requires 2D input; wrap to reshape x_test.
+def _make_rbf_scipy(x_train, y_train, kernel="gaussian", epsilon=1.0):
+    interp = ScipyRBFInterpolator(x_train.reshape(-1, 1), y_train, kernel=kernel, epsilon=epsilon)
+    def wrapped(x_eval):
+        return interp(x_eval.reshape(-1, 1))
+    return wrapped
+
+
+# Helper: ChebyshevInterpolator.fit() takes only y (nodes are predetermined).
+def _build_chebyshev(x_train, y_train, **kwargs):
+    interp = ChebyshevInterpolator(
+        n_points=len(y_train),
+        x_min=float(x_train.min()),
+        x_max=float(x_train.max()),
+        use_clenshaw=True,
+    )
+    interp.fit(y_train)
+    return interp
+
+
+# Helper: wrap scipy Chebyshev series fit as a callable.
+# Use at most degree 20 to avoid ill-conditioning on uniform grids.
+def _make_chebyshev_scipy(x_train, y_train):
+    deg = min(len(x_train) - 1, 20)
+    series = ChebSeries.fit(x_train, y_train, deg, domain=(float(x_train.min()), float(x_train.max())))
+    return series
+
+
+# Helper: wrap numpy Polynomial.fit as a callable.
+def _make_polyfit_scipy(x_train, y_train):
+    series = Polynomial.fit(x_train, y_train, 2)
+    return series
 
 # Define method configurations
 METHOD_CONFIGS = {
     'lagrange': {
         'interlib_class': LagrangeInterpolator,
         'scipy_func': lambda x, y: BarycentricInterpolator(x, y),
-        'default_sizes': [10, 20, 50, 100, 200, 500, 1000],
+        'default_sizes': [10, 20, 50, 100, 200, 500],
         'kwargs': {'interlib': {}, 'scipy': {}},
         'display_name': 'Lagrange vs Barycentric',
         'needs_derivs': False
@@ -43,7 +79,7 @@ METHOD_CONFIGS = {
     'newton': {
         'interlib_class': NewtonInterpolator,
         'scipy_func': lambda x, y: BarycentricInterpolator(x, y),
-        'default_sizes': [10, 20, 50, 100],
+        'default_sizes': [10, 20, 50, 100, 200, 500],
         'kwargs': {'interlib': {}, 'scipy': {}},
         'display_name': 'Newton vs Barycentric',
         'needs_derivs': False
@@ -75,17 +111,34 @@ METHOD_CONFIGS = {
     'hermite': {
         'interlib_class': HermiteInterpolator,
         'scipy_func': lambda x, y: PchipInterpolator(x, y),
-        'default_sizes': [50, 100, 200, 500, 1000],
+        'default_sizes': [10, 20, 50, 100, 200, 500],
         'kwargs': {'interlib': {}, 'scipy': {}},
         'display_name': 'Hermite vs PCHIP',
         'needs_derivs': True
     },
     'rbf': {
         'interlib_class': RBFInterpolator,
-        'scipy_func': lambda x, y: ScipyRBFInterpolator(x.reshape(-1, 1), y, kernel="gaussian", epsilon=1.0),
-        'default_sizes': [10, 20, 30],
-        'kwargs': {'interlib': {'kernel': 'gaussian', 'epsilon': 1.0}, 'scipy': {}},
+        'scipy_func': lambda x, y: _make_rbf_scipy(x, y, kernel="gaussian", epsilon=2.0),
+        'default_sizes': [10, 20, 50, 100],
+        'kwargs': {'interlib': {'kernel': 'gaussian', 'epsilon': 2.0}, 'scipy': {}},
         'display_name': 'RBF Gaussian',
+        'needs_derivs': False
+    },
+    'chebyshev': {
+        'interlib_class': ChebyshevInterpolator,
+        'build_interlib': _build_chebyshev,
+        'scipy_func': _make_chebyshev_scipy,
+        'default_sizes': [10, 20, 50, 100, 200, 500],
+        'kwargs': {'interlib': {}, 'scipy': {}},
+        'display_name': 'Chebyshev',
+        'needs_derivs': False
+    },
+    'leastsquares': {
+        'interlib_class': LeastSquaresInterpolator,
+        'scipy_func': _make_polyfit_scipy,
+        'default_sizes': [50, 100, 200, 500, 1000],
+        'kwargs': {'interlib': {'degree': 2}, 'scipy': {}},
+        'display_name': 'Least Squares (deg=2)',
         'needs_derivs': False
     }
 }
@@ -115,12 +168,17 @@ def measure_performance(
             # --- BENCHMARK INTERLIB ---
             il_runs = []
             
-            # Manual GC to ensure a clean slate before timing
-            gc.collect()
-            gc.disable() 
-            try:
+            build_func = kwargs.get('build_interlib')
+            if build_func is not None:
                 for i in range(n_runs + n_warmup):
-                    # Re-instantiate to avoid any internal caching between runs
+                    start = time.perf_counter()
+                    interp = build_func(x_train, y_train)
+                    _ = interp(x_test)
+                    end = time.perf_counter()
+                    if i >= n_warmup:
+                        il_runs.append(end - start)
+            else:
+                for i in range(n_runs + n_warmup):
                     interp = interlib_class(**kwargs.get('interlib', {}))
                     
                     start = time.perf_counter()
@@ -131,11 +189,8 @@ def measure_performance(
                     _ = interp(x_test)
                     end = time.perf_counter()
                     
-                    # Only record after warmup phase
                     if i >= n_warmup:
                         il_runs.append(end - start)
-            finally:
-                gc.enable()
                 
             # Use MEDIAN to be robust against outliers/OS spikes
             interlib_times.append(np.median(il_runs))
@@ -143,19 +198,14 @@ def measure_performance(
             # --- BENCHMARK SCIPY ---
             if not no_compare:
                 sp_runs = []
-                gc.collect()
-                gc.disable()
-                try:
-                    for i in range(n_runs + n_warmup):
-                        start = time.perf_counter()
-                        scipy_interp = scipy_func(x_train, y_train, **kwargs.get('scipy', {}))
-                        _ = scipy_interp(x_test)
-                        end = time.perf_counter()
-                        
-                        if i >= n_warmup:
-                            sp_runs.append(end - start)
-                finally:
-                    gc.enable()
+                for i in range(n_runs + n_warmup):
+                    start = time.perf_counter()
+                    scipy_interp = scipy_func(x_train, y_train, **kwargs.get('scipy', {}))
+                    _ = scipy_interp(x_test)
+                    end = time.perf_counter()
+                    
+                    if i >= n_warmup:
+                        sp_runs.append(end - start)
                 
                 assert scipy_times is not None
                 scipy_times.append(np.median(sp_runs))
@@ -164,8 +214,6 @@ def measure_performance(
 
         except Exception as e:
             print(f"  Failed at n={n}: {e}")
-            if not gc.isenabled():
-                gc.enable()  # Safety
             continue
 
     return sizes_ok, interlib_times, scipy_times
@@ -264,9 +312,10 @@ def plot_scaling_chart(
 ):
     print("\nGenerating scaling comparison plot...")
 
-    fig, ax = plt.subplots(figsize=(12, 8))
+    fig, ax = plt.subplots(figsize=(14, 8))
 
-    colors = {'interlib': ['#2E86AB', '#1B4965', '#0A2342'], 'scipy': ['#A23B72', '#F18F01', '#D36135']}
+    method_colors = ['#2E86AB', '#A23B72', '#117733', '#DDCC77',
+                     '#1B4965', '#F18F01', '#0A2342', '#44AA99', '#D36135']
     markers = {'interlib': 'o', 'scipy': 's'}
     linestyles = {'interlib': '-', 'scipy': '--'}
     color_idx = 0
@@ -283,22 +332,23 @@ def plot_scaling_chart(
             n_runs=args.runs,
             needs_derivs=config['needs_derivs'],
             no_compare=args.no_compare,
+            build_interlib=config.get('build_interlib'),
             **config['kwargs']
         )
 
         if len(s_ok) >= 2:
-            # Plot interlib
-            times_ms = [t * 1000 for t in il_t]
-            label = f"{method_key.capitalize()} (interlib)"
-            ax.loglog(s_ok, times_ms, marker=markers['interlib'], linestyle=linestyles['interlib'],
-                      linewidth=2, markersize=8, label=label, color=colors['interlib'][color_idx % len(colors['interlib'])], alpha=0.8)
+            color = method_colors[color_idx % len(method_colors)]
+            il_times_ms = [t * 1000 for t in il_t]
+
+            ax.loglog(s_ok, il_times_ms, marker=markers['interlib'], linestyle=linestyles['interlib'],
+                      linewidth=2, markersize=8, label=f"{config['display_name']} (interlib)",
+                      color=color, alpha=0.8)
 
             if sp_t:
-                # Plot scipy
-                times_ms = [t * 1000 for t in sp_t]
-                label = f"{method_key.capitalize()} (scipy)"
-                ax.loglog(s_ok, times_ms, marker=markers['scipy'], linestyle=linestyles['scipy'],
-                          linewidth=2, markersize=8, label=label, color=colors['scipy'][color_idx % len(colors['scipy'])], alpha=0.8)
+                sp_times_ms = [t * 1000 for t in sp_t]
+                ax.loglog(s_ok, sp_times_ms, marker=markers['scipy'], linestyle=linestyles['scipy'],
+                          linewidth=2, markersize=8, label=f"{config['display_name']} (scipy)",
+                          color=color, alpha=0.8)
 
         color_idx += 1
 
@@ -306,7 +356,7 @@ def plot_scaling_chart(
     ax.set_ylabel('Total Time (ms)', fontsize=13, fontweight='bold')
     ax.set_title('Scaling Comparison: interlib vs scipy (Log-Log Scale)',
                  fontsize=15, fontweight='bold')
-    ax.legend(loc='best', fontsize=11)
+    ax.legend(bbox_to_anchor=(1.02, 1.0), loc='upper left', fontsize=9)
     ax.grid(True, which="both", ls="-", alpha=0.3)
 
     plt.tight_layout()
@@ -332,12 +382,15 @@ def plot_accuracy_chart(
     derivs = np.cos(x_train) if config['needs_derivs'] else None
 
     try:
-        # Fit interlib
-        interlib_interp = config['interlib_class'](**config['kwargs']['interlib'])
-        if config['needs_derivs']:
-            interlib_interp.fit(x_train, y_train, derivs)
+        build_func = config.get('build_interlib')
+        if build_func is not None:
+            interlib_interp = build_func(x_train, y_train)
         else:
-            interlib_interp.fit(x_train, y_train)
+            interlib_interp = config['interlib_class'](**config['kwargs']['interlib'])
+            if config['needs_derivs']:
+                interlib_interp.fit(x_train, y_train, derivs)
+            else:
+                interlib_interp.fit(x_train, y_train)
 
         y_interlib = interlib_interp(x_test)
 
@@ -428,12 +481,15 @@ def plot_summary_chart(
         try:
             derivs = np.cos(x_train) if config['needs_derivs'] else None
 
-            # Measure interlib
-            interlib_inst = config['interlib_class'](**config['kwargs']['interlib'])
-            if config['needs_derivs']:
-                interlib_inst.fit(x_train, y_train, derivs)
+            build_func = config.get('build_interlib')
+            if build_func is not None:
+                interlib_inst = build_func(x_train, y_train)
             else:
-                interlib_inst.fit(x_train, y_train)
+                interlib_inst = config['interlib_class'](**config['kwargs']['interlib'])
+                if config['needs_derivs']:
+                    interlib_inst.fit(x_train, y_train, derivs)
+                else:
+                    interlib_inst.fit(x_train, y_train)
             start = time.perf_counter()
             _ = interlib_inst(x_test)
             il_time = (time.perf_counter() - start) * 1000
@@ -447,7 +503,7 @@ def plot_summary_chart(
             else:
                 sp_time = None
 
-            method_names.append(method_key.capitalize())
+            method_names.append(config['display_name'])
             interlib_times.append(il_time)
             if sp_time is not None and scipy_times is not None:
                 scipy_times.append(sp_time)
@@ -456,7 +512,7 @@ def plot_summary_chart(
             print(f"    Failed: {e}")
 
     if len(method_names) > 0:
-        fig, ax = plt.subplots(figsize=(12, 7))
+        fig, ax = plt.subplots(figsize=(14, 8))
 
         x_pos = np.arange(len(method_names))
         width = 0.35
@@ -476,7 +532,7 @@ def plot_summary_chart(
         ax.set_title(f'Performance Summary: interlib vs scipy\n(Dataset size: {n_points} points)',
                      fontsize=15, fontweight='bold')
         ax.set_xticks(x_pos)
-        ax.set_xticklabels(method_names, fontsize=11)
+        ax.set_xticklabels(method_names, fontsize=10, rotation=30, ha='right')
         ax.legend(fontsize=11)
         ax.grid(axis='y', alpha=0.3)
 
@@ -501,7 +557,7 @@ def plot_summary_chart(
 
 def main():
     parser = argparse.ArgumentParser(description="Visual Comparison Benchmark: interlib vs scipy.interpolate")
-    parser.add_argument('--methods', nargs='*', default=['all'], help='Methods to benchmark (lagrange, linear, quadratic, cubicspline, hermite, rbf) or all')
+    parser.add_argument('--methods', nargs='*', default=['all'], help='Methods to benchmark (lagrange, newton, linear, quadratic, cubicspline, hermite, rbf, chebyshev, leastsquares) or all')
     parser.add_argument('--sizes', nargs='*', type=int, help='Dataset sizes (overrides defaults)')
     parser.add_argument('--runs', type=int, default=3, help='Number of runs per measurement')
     parser.add_argument('--output-dir', default='python/benches/benchmark_plots', help='Output directory for plots')
@@ -542,6 +598,7 @@ def main():
                 n_runs=args.runs,
                 needs_derivs=config['needs_derivs'],
                 no_compare=args.no_compare,
+                build_interlib=config.get('build_interlib'),
                 **config['kwargs']
             )
             plot_performance_chart(method_key, config, s_ok, il_t, sp_t, args.output_dir)
