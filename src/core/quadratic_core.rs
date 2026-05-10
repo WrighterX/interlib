@@ -5,6 +5,7 @@ use crate::core::core_trait::InterpolationCore;
 pub(crate) struct QuadraticCore {
     x_values: Vec<f64>,
     coefficients: Vec<f64>,
+    uniform_inv_step: Option<f64>,
     fitted: bool,
 }
 
@@ -13,6 +14,7 @@ impl QuadraticCore {
         Self {
             x_values: Vec::new(),
             coefficients: Vec::new(),
+            uniform_inv_step: None,
             fitted: false,
         }
     }
@@ -49,6 +51,7 @@ impl QuadraticCore {
             coefficients.push(c);
         }
 
+        self.uniform_inv_step = detect_uniform_inv_step(&x);
         self.x_values = x;
         self.coefficients = coefficients;
         self.fitted = true;
@@ -75,15 +78,39 @@ impl QuadraticCore {
         }
     }
 
+    fn uniform_segment_index(&self, x: f64, inv_step: f64) -> usize {
+        let n_segments = self.x_values.len() - 2;
+        let cell = ((x - self.x_values[0]) * inv_step).floor();
+        if cell <= 0.0 {
+            0
+        } else {
+            (cell as usize).saturating_sub(1).min(n_segments - 1)
+        }
+    }
+
+    fn fill_many_uniform(&self, xs: &[f64], out: &mut [f64], inv_step: f64) {
+        for (slot, &x) in out.iter_mut().zip(xs.iter()) {
+            let seg_idx = self.uniform_segment_index(x, inv_step);
+            let base = seg_idx * 3;
+            let a = self.coefficients[base];
+            let b = self.coefficients[base + 1];
+            let c = self.coefficients[base + 2];
+            *slot = eval_quadratic(a, b, c, x);
+        }
+    }
+
     #[inline]
     pub(crate) fn eval_internal(&self, x: f64) -> f64 {
         let x_values = &self.x_values;
         let n = x_values.len();
         let n_segments = n - 2;
 
-        let pos = x_values.partition_point(|&xi| xi <= x);
-
-        let seg_idx = pos.saturating_sub(2).min(n_segments - 1);
+        let seg_idx = if let Some(inv_step) = self.uniform_inv_step {
+            self.uniform_segment_index(x, inv_step)
+        } else {
+            let pos = x_values.partition_point(|&xi| xi <= x);
+            pos.saturating_sub(2).min(n_segments - 1)
+        };
 
         let base = seg_idx * 3;
         let a = self.coefficients[base];
@@ -140,6 +167,11 @@ impl InterpolationCore for QuadraticCore {
             return Ok(());
         }
 
+        if let Some(inv_step) = self.uniform_inv_step {
+            self.fill_many_uniform(xs, out, inv_step);
+            return Ok(());
+        }
+
         let mut i = 0;
         while i + 1 < xs.len() {
             out[i] = self.eval_internal(xs[i]);
@@ -151,6 +183,23 @@ impl InterpolationCore for QuadraticCore {
         }
         Ok(())
     }
+}
+
+fn detect_uniform_inv_step(x_values: &[f64]) -> Option<f64> {
+    if x_values.len() < 3 {
+        return None;
+    }
+    let step = x_values[1] - x_values[0];
+    if step <= 0.0 || !step.is_finite() {
+        return None;
+    }
+    let tolerance = step.abs() * 1e-10 + f64::EPSILON;
+    for pair in x_values.windows(2).skip(1) {
+        if ((pair[1] - pair[0]) - step).abs() > tolerance {
+            return None;
+        }
+    }
+    Some(1.0 / step)
 }
 
 /// Solve 3×3 system for quadratic coefficients using Cramer's rule
@@ -189,7 +238,7 @@ fn solve_quadratic_coefficients(
 
 #[inline]
 fn eval_quadratic(a: f64, b: f64, c: f64, x: f64) -> f64 {
-    a + b * x + c * x * x
+    a + x * (b + c * x)
 }
 
 #[cfg(test)]

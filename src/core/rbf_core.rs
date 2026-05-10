@@ -68,6 +68,7 @@ impl RBFKernel {
 pub(crate) struct RBFCore {
     x_values: Vec<f64>,
     weights: Vec<f64>,
+    uniform_step: Option<f64>,
     kernel: RBFKernel,
     epsilon: f64,
     fitted: bool,
@@ -82,6 +83,7 @@ impl RBFCore {
         Ok(Self {
             x_values: Vec::new(),
             weights: Vec::new(),
+            uniform_step: None,
             kernel,
             epsilon,
             fitted: false,
@@ -101,15 +103,24 @@ impl RBFCore {
         if xs.is_empty() {
             return Err(CoreError::EmptyInput { what: "x and y" }.into());
         }
-        let mut x_sorted = xs.to_vec();
-        x_sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        for i in 0..x_sorted.len().saturating_sub(1) {
-            if x_sorted[i] == x_sorted[i + 1] {
-                return Err(CoreError::DistinctNodesRequired { what: "x values" }.into());
+        if crate::core::core_trait::is_non_decreasing(xs) {
+            for i in 0..xs.len().saturating_sub(1) {
+                if xs[i] == xs[i + 1] {
+                    return Err(CoreError::DistinctNodesRequired { what: "x values" }.into());
+                }
+            }
+        } else {
+            let mut x_sorted = xs.to_vec();
+            x_sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            for i in 0..x_sorted.len().saturating_sub(1) {
+                if x_sorted[i] == x_sorted[i + 1] {
+                    return Err(CoreError::DistinctNodesRequired { what: "x values" }.into());
+                }
             }
         }
 
         let weights = compute_rbf_weights(xs, ys, self.kernel, self.epsilon)?;
+        self.uniform_step = detect_uniform_step(xs);
         self.x_values = xs.to_vec();
         self.weights = weights;
         self.fitted = true;
@@ -201,6 +212,22 @@ impl InterpolationCore for RBFCore {
             }
             .into());
         }
+        if self.kernel == RBFKernel::Gaussian {
+            if let Some(step) = self.uniform_step {
+                rbf_fill_many_gaussian_uniform_centers(
+                    &self.x_values,
+                    &self.weights,
+                    self.epsilon,
+                    step,
+                    xs,
+                    out,
+                );
+            } else {
+                rbf_fill_many_gaussian(&self.x_values, &self.weights, self.epsilon, xs, out);
+            }
+            return Ok(());
+        }
+
         for (value, slot) in xs.iter().zip(out.iter_mut()) {
             *slot = rbf_evaluate(
                 &self.x_values,
@@ -214,25 +241,27 @@ impl InterpolationCore for RBFCore {
     }
 
     fn evaluate_many(&self, xs: &[f64]) -> Result<Vec<f64>, String> {
-        if !self.fitted {
-            return Err(CoreError::NotFitted {
-                hint: "Call fit(x, y) first.",
-            }
-            .into());
-        }
-        Ok(xs
-            .iter()
-            .map(|&value| {
-                rbf_evaluate(
-                    &self.x_values,
-                    &self.weights,
-                    self.kernel,
-                    self.epsilon,
-                    value,
-                )
-            })
-            .collect())
+        let mut out = vec![0.0; xs.len()];
+        self.fill_many(xs, &mut out)?;
+        Ok(out)
     }
+}
+
+fn detect_uniform_step(x_values: &[f64]) -> Option<f64> {
+    if x_values.len() < 3 {
+        return None;
+    }
+    let step = x_values[1] - x_values[0];
+    if step <= 0.0 || !step.is_finite() {
+        return None;
+    }
+    let tolerance = step.abs() * 1e-10 + f64::EPSILON;
+    for pair in x_values.windows(2).skip(1) {
+        if ((pair[1] - pair[0]) - step).abs() > tolerance {
+            return None;
+        }
+    }
+    Some(step)
 }
 
 fn compute_rbf_weights(
@@ -241,6 +270,10 @@ fn compute_rbf_weights(
     kernel: RBFKernel,
     epsilon: f64,
 ) -> Result<Vec<f64>, String> {
+    if kernel == RBFKernel::Gaussian {
+        return compute_gaussian_rbf_weights_flat(x_values, y_values, epsilon);
+    }
+
     let n = x_values.len();
     let mut matrix = vec![vec![0.0; n]; n];
     let diag = kernel.evaluate(0.0, epsilon);
@@ -256,6 +289,174 @@ fn compute_rbf_weights(
 
     let result = solve_linear_system_gaussian(matrix, y_values.to_vec())?;
     Ok(result)
+}
+
+fn compute_gaussian_rbf_weights_flat(
+    x_values: &[f64],
+    y_values: &[f64],
+    epsilon: f64,
+) -> Result<Vec<f64>, String> {
+    let n = x_values.len();
+    let mut matrix = vec![0.0; n * n];
+    let epsilon_sq = epsilon * epsilon;
+    for i in 0..n {
+        matrix[i * n + i] = 1.0;
+        for j in i + 1..n {
+            let diff = x_values[i] - x_values[j];
+            let val = (-(epsilon_sq * diff * diff)).exp();
+            matrix[i * n + j] = val;
+            matrix[j * n + i] = val;
+        }
+    }
+
+    solve_linear_system_gaussian_flat(matrix, y_values.to_vec(), n)
+}
+
+fn solve_linear_system_gaussian_flat(
+    mut a: Vec<f64>,
+    mut b: Vec<f64>,
+    n: usize,
+) -> Result<Vec<f64>, String> {
+    for k in 0..n {
+        let mut max_idx = k;
+        let mut max_val = a[k * n + k].abs();
+        for i in k + 1..n {
+            let value = a[i * n + k].abs();
+            if value > max_val {
+                max_val = value;
+                max_idx = i;
+            }
+        }
+        if max_idx != k {
+            for j in k..n {
+                a.swap(k * n + j, max_idx * n + j);
+            }
+            b.swap(k, max_idx);
+        }
+        let pivot = a[k * n + k];
+        if pivot.abs() < 1e-12 {
+            return Err(format!("Singular matrix near pivot {}", k));
+        }
+        for i in k + 1..n {
+            let row_base = i * n;
+            let factor = a[row_base + k] / pivot;
+            a[row_base + k] = 0.0;
+            for j in k + 1..n {
+                a[row_base + j] -= factor * a[k * n + j];
+            }
+            b[i] -= factor * b[k];
+        }
+    }
+
+    let mut x = vec![0.0; n];
+    for i in (0..n).rev() {
+        let mut value = b[i];
+        for j in i + 1..n {
+            value -= a[i * n + j] * x[j];
+        }
+        x[i] = value / a[i * n + i];
+    }
+    Ok(x)
+}
+
+fn rbf_fill_many_gaussian_uniform_centers(
+    x_values: &[f64],
+    weights: &[f64],
+    epsilon: f64,
+    step: f64,
+    xs: &[f64],
+    out: &mut [f64],
+) {
+    let epsilon_sq = epsilon * epsilon;
+    let first = x_values[0];
+    let last_idx = x_values.len() - 1;
+    let inv_step = 1.0 / step;
+    let step_sq = epsilon_sq * step * step;
+    let two_epsilon_sq_step = 2.0 * epsilon_sq * step;
+    let step_kernel_decay = (-2.0 * step_sq).exp();
+
+    for (slot, &x) in out.iter_mut().zip(xs.iter()) {
+        let nearest = ((x - first) * inv_step).round();
+        let center_idx = if nearest <= 0.0 {
+            0
+        } else if nearest >= last_idx as f64 {
+            last_idx
+        } else {
+            nearest as usize
+        };
+
+        let center = x_values[center_idx];
+        let d = x - center;
+        let kernel_center = (-(epsilon_sq * d * d)).exp();
+        let mut result = weights[center_idx] * kernel_center;
+
+        let mut kernel = kernel_center;
+        let mut ratio = (two_epsilon_sq_step * d - step_sq).exp();
+        for j in center_idx + 1..x_values.len() {
+            kernel *= ratio;
+            result += weights[j] * kernel;
+            ratio *= step_kernel_decay;
+        }
+
+        let mut kernel = kernel_center;
+        let mut ratio = (-two_epsilon_sq_step * d - step_sq).exp();
+        for j in (0..center_idx).rev() {
+            kernel *= ratio;
+            result += weights[j] * kernel;
+            ratio *= step_kernel_decay;
+        }
+
+        *slot = result;
+    }
+}
+
+fn rbf_fill_many_gaussian(
+    x_values: &[f64],
+    weights: &[f64],
+    epsilon: f64,
+    xs: &[f64],
+    out: &mut [f64],
+) {
+    let epsilon_sq = epsilon * epsilon;
+    let mut i = 0;
+    while i + 3 < xs.len() {
+        let x0 = xs[i];
+        let x1 = xs[i + 1];
+        let x2 = xs[i + 2];
+        let x3 = xs[i + 3];
+        let mut r0 = 0.0;
+        let mut r1 = 0.0;
+        let mut r2 = 0.0;
+        let mut r3 = 0.0;
+
+        for idx in 0..x_values.len() {
+            let center = x_values[idx];
+            let weight = weights[idx];
+
+            let dx0 = x0 - center;
+            r0 += weight * (-(epsilon_sq * dx0 * dx0)).exp();
+
+            let dx1 = x1 - center;
+            r1 += weight * (-(epsilon_sq * dx1 * dx1)).exp();
+
+            let dx2 = x2 - center;
+            r2 += weight * (-(epsilon_sq * dx2 * dx2)).exp();
+
+            let dx3 = x3 - center;
+            r3 += weight * (-(epsilon_sq * dx3 * dx3)).exp();
+        }
+
+        out[i] = r0;
+        out[i + 1] = r1;
+        out[i + 2] = r2;
+        out[i + 3] = r3;
+        i += 4;
+    }
+
+    while i < xs.len() {
+        out[i] = rbf_evaluate(x_values, weights, RBFKernel::Gaussian, epsilon, xs[i]);
+        i += 1;
+    }
 }
 
 fn rbf_evaluate(x_values: &[f64], weights: &[f64], kernel: RBFKernel, epsilon: f64, x: f64) -> f64 {

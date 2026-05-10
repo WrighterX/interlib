@@ -12,7 +12,7 @@ fn compute_normal_equations(
         return Err(format!("Need at least {} points for degree {}", m, degree));
     }
 
-    let max_power = 2 * m - 1;
+    let max_power = 2 * degree;
     let mut sum_xp = vec![0.0f64; max_power + 1];
     let mut sum_xyp = vec![0.0f64; m];
 
@@ -44,11 +44,64 @@ fn compute_normal_equations(
 }
 
 fn evaluate_polynomial(coefficients: &[f64], x: f64) -> f64 {
-    coefficients
-        .iter()
-        .enumerate()
-        .map(|(power, coef)| coef * x.powi(power as i32))
-        .sum()
+    let mut result = 0.0;
+    for &coef in coefficients.iter().rev() {
+        result = result * x + coef;
+    }
+    result
+}
+
+fn evaluate_polynomial4(
+    coefficients: &[f64],
+    x0: f64,
+    x1: f64,
+    x2: f64,
+    x3: f64,
+) -> [f64; 4] {
+    let mut r0 = 0.0;
+    let mut r1 = 0.0;
+    let mut r2 = 0.0;
+    let mut r3 = 0.0;
+    for &coef in coefficients.iter().rev() {
+        r0 = r0 * x0 + coef;
+        r1 = r1 * x1 + coef;
+        r2 = r2 * x2 + coef;
+        r3 = r3 * x3 + coef;
+    }
+    [r0, r1, r2, r3]
+}
+
+#[allow(clippy::too_many_arguments)]
+fn evaluate_polynomial8(
+    coefficients: &[f64],
+    x0: f64,
+    x1: f64,
+    x2: f64,
+    x3: f64,
+    x4: f64,
+    x5: f64,
+    x6: f64,
+    x7: f64,
+) -> [f64; 8] {
+    let mut r0 = 0.0;
+    let mut r1 = 0.0;
+    let mut r2 = 0.0;
+    let mut r3 = 0.0;
+    let mut r4 = 0.0;
+    let mut r5 = 0.0;
+    let mut r6 = 0.0;
+    let mut r7 = 0.0;
+    for &coef in coefficients.iter().rev() {
+        r0 = r0 * x0 + coef;
+        r1 = r1 * x1 + coef;
+        r2 = r2 * x2 + coef;
+        r3 = r3 * x3 + coef;
+        r4 = r4 * x4 + coef;
+        r5 = r5 * x5 + coef;
+        r6 = r6 * x6 + coef;
+        r7 = r7 * x7 + coef;
+    }
+    [r0, r1, r2, r3, r4, r5, r6, r7]
 }
 
 #[derive(Clone)]
@@ -189,14 +242,45 @@ impl InterpolationCore for LeastSquaresCore {
         }
         let n = xs.len();
         let mut i = 0;
-        while i + 1 < n {
-            out[i] = evaluate_polynomial(&self.coefficients, xs[i]);
-            out[i + 1] =
-                evaluate_polynomial(&self.coefficients, xs[i + 1]);
-            i += 2;
+        while i + 7 < n {
+            let values = evaluate_polynomial8(
+                &self.coefficients,
+                xs[i],
+                xs[i + 1],
+                xs[i + 2],
+                xs[i + 3],
+                xs[i + 4],
+                xs[i + 5],
+                xs[i + 6],
+                xs[i + 7],
+            );
+            out[i] = values[0];
+            out[i + 1] = values[1];
+            out[i + 2] = values[2];
+            out[i + 3] = values[3];
+            out[i + 4] = values[4];
+            out[i + 5] = values[5];
+            out[i + 6] = values[6];
+            out[i + 7] = values[7];
+            i += 8;
         }
-        if i < n {
+        while i + 3 < n {
+            let values = evaluate_polynomial4(
+                &self.coefficients,
+                xs[i],
+                xs[i + 1],
+                xs[i + 2],
+                xs[i + 3],
+            );
+            out[i] = values[0];
+            out[i + 1] = values[1];
+            out[i + 2] = values[2];
+            out[i + 3] = values[3];
+            i += 4;
+        }
+        while i < n {
             out[i] = evaluate_polynomial(&self.coefficients, xs[i]);
+            i += 1;
         }
         Ok(())
     }

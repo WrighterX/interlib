@@ -5,6 +5,7 @@ pub(crate) struct LagrangeCore {
     x_values: Vec<f64>,
     y_values: Vec<f64>,
     weights: Vec<f64>,
+    weighted_y: Vec<f64>,
     fitted: bool,
 }
 
@@ -14,6 +15,7 @@ impl LagrangeCore {
             x_values: Vec::new(),
             y_values: Vec::new(),
             weights: Vec::new(),
+            weighted_y: Vec::new(),
             fitted: false,
         }
     }
@@ -33,6 +35,7 @@ impl LagrangeCore {
         }
 
         self.weights = compute_barycentric_weights(&x);
+        self.weighted_y = compute_weighted_y(&self.weights, &y);
         self.x_values = x;
         self.y_values = y;
         self.fitted = true;
@@ -49,6 +52,7 @@ impl LagrangeCore {
         if y.len() != self.x_values.len() {
             return Err("New y must have the same length as x".into());
         }
+        self.weighted_y = compute_weighted_y(&self.weights, &y);
         self.y_values = y;
         Ok(())
     }
@@ -79,6 +83,7 @@ impl LagrangeCore {
         self.x_values.push(x_new);
         self.y_values.push(y_new);
         self.weights.push(w_new);
+        self.weighted_y = compute_weighted_y(&self.weights, &self.y_values);
         Ok(())
     }
 
@@ -106,6 +111,7 @@ impl InterpolationCore for LagrangeCore {
             &self.x_values,
             &self.y_values,
             &self.weights,
+            &self.weighted_y,
             x,
         ))
     }
@@ -129,13 +135,26 @@ impl InterpolationCore for LagrangeCore {
         let n = xs.len();
         let mut i = 0;
         while i + 1 < n {
-            out[i] = barycentric_eval(&self.x_values, &self.y_values, &self.weights, xs[i]);
-            out[i + 1] =
-                barycentric_eval(&self.x_values, &self.y_values, &self.weights, xs[i + 1]);
+            let values = barycentric_eval2(
+                &self.x_values,
+                &self.y_values,
+                &self.weights,
+                &self.weighted_y,
+                xs[i],
+                xs[i + 1],
+            );
+            out[i] = values[0];
+            out[i + 1] = values[1];
             i += 2;
         }
         if i < n {
-            out[i] = barycentric_eval(&self.x_values, &self.y_values, &self.weights, xs[i]);
+            out[i] = barycentric_eval(
+                &self.x_values,
+                &self.y_values,
+                &self.weights,
+                &self.weighted_y,
+                xs[i],
+            );
         }
         Ok(())
     }
@@ -145,18 +164,35 @@ fn compute_barycentric_weights(x_values: &[f64]) -> Vec<f64> {
     let n = x_values.len();
     let mut weights = vec![1.0; n];
     // O(n^2) precompute, but evaluation becomes O(n) with no polynomial build.
+    // Each node pair contributes to two weights with opposite signs.
     for j in 0..n {
-        for k in 0..n {
-            if k != j {
-                weights[j] *= x_values[j] - x_values[k];
-            }
+        for k in j + 1..n {
+            let diff = x_values[j] - x_values[k];
+            weights[j] *= diff;
+            weights[k] *= -diff;
         }
-        weights[j] = 1.0 / weights[j];
+    }
+    for weight in &mut weights {
+        *weight = 1.0 / *weight;
     }
     weights
 }
 
-fn barycentric_eval(x_values: &[f64], y_values: &[f64], weights: &[f64], x: f64) -> f64 {
+fn compute_weighted_y(weights: &[f64], y_values: &[f64]) -> Vec<f64> {
+    weights
+        .iter()
+        .zip(y_values.iter())
+        .map(|(&weight, &y)| weight * y)
+        .collect()
+}
+
+fn barycentric_eval(
+    x_values: &[f64],
+    y_values: &[f64],
+    weights: &[f64],
+    weighted_y: &[f64],
+    x: f64,
+) -> f64 {
     let mut numer = 0.0;
     let mut denom = 0.0;
     for j in 0..x_values.len() {
@@ -165,9 +201,60 @@ fn barycentric_eval(x_values: &[f64], y_values: &[f64], weights: &[f64], x: f64)
             return y_values[j];
         }
         // The barycentric ratio keeps the interpolation numerically stable.
-        let term = weights[j] / diff;
-        numer += term * y_values[j];
-        denom += term;
+        numer += weighted_y[j] / diff;
+        denom += weights[j] / diff;
     }
     numer / denom
+}
+
+fn barycentric_eval2(
+    x_values: &[f64],
+    y_values: &[f64],
+    weights: &[f64],
+    weighted_y: &[f64],
+    x0: f64,
+    x1: f64,
+) -> [f64; 2] {
+    let mut numer0 = 0.0;
+    let mut denom0 = 0.0;
+    let mut numer1 = 0.0;
+    let mut denom1 = 0.0;
+    let mut exact0 = 0.0;
+    let mut exact1 = 0.0;
+    let mut has_exact0 = false;
+    let mut has_exact1 = false;
+
+    for j in 0..x_values.len() {
+        let node = x_values[j];
+        let y = y_values[j];
+        let weight = weights[j];
+        let weighted = weighted_y[j];
+
+        let diff0 = x0 - node;
+        if diff0 == 0.0 {
+            if !has_exact0 {
+                exact0 = y;
+                has_exact0 = true;
+            }
+        } else {
+            numer0 += weighted / diff0;
+            denom0 += weight / diff0;
+        }
+
+        let diff1 = x1 - node;
+        if diff1 == 0.0 {
+            if !has_exact1 {
+                exact1 = y;
+                has_exact1 = true;
+            }
+        } else {
+            numer1 += weighted / diff1;
+            denom1 += weight / diff1;
+        }
+    }
+
+    [
+        if has_exact0 { exact0 } else { numer0 / denom0 },
+        if has_exact1 { exact1 } else { numer1 / denom1 },
+    ]
 }

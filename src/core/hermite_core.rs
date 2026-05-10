@@ -104,14 +104,47 @@ impl InterpolationCore for HermiteCore {
         }
         let n = xs.len();
         let mut i = 0;
-        while i + 1 < n {
-            out[i] = hermite_evaluate(&self.z_values, &self.coefficients, xs[i]);
-            out[i + 1] =
-                hermite_evaluate(&self.z_values, &self.coefficients, xs[i + 1]);
-            i += 2;
+        while i + 7 < n {
+            let values = hermite_evaluate8(
+                &self.z_values,
+                &self.coefficients,
+                xs[i],
+                xs[i + 1],
+                xs[i + 2],
+                xs[i + 3],
+                xs[i + 4],
+                xs[i + 5],
+                xs[i + 6],
+                xs[i + 7],
+            );
+            out[i] = values[0];
+            out[i + 1] = values[1];
+            out[i + 2] = values[2];
+            out[i + 3] = values[3];
+            out[i + 4] = values[4];
+            out[i + 5] = values[5];
+            out[i + 6] = values[6];
+            out[i + 7] = values[7];
+            i += 8;
         }
-        if i < n {
+        while i + 3 < n {
+            let values = hermite_evaluate4(
+                &self.z_values,
+                &self.coefficients,
+                xs[i],
+                xs[i + 1],
+                xs[i + 2],
+                xs[i + 3],
+            );
+            out[i] = values[0];
+            out[i + 1] = values[1];
+            out[i + 2] = values[2];
+            out[i + 3] = values[3];
+            i += 4;
+        }
+        while i < n {
             out[i] = hermite_evaluate(&self.z_values, &self.coefficients, xs[i]);
+            i += 1;
         }
         Ok(())
     }
@@ -197,6 +230,77 @@ fn hermite_evaluate(z: &[f64], coefficients: &[f64], x: f64) -> f64 {
         result = result * (x - z[i]) + coefficients[i];
     }
     result
+}
+
+fn hermite_evaluate4(
+    z: &[f64],
+    coefficients: &[f64],
+    x0: f64,
+    x1: f64,
+    x2: f64,
+    x3: f64,
+) -> [f64; 4] {
+    let n = coefficients.len();
+    if n == 0 {
+        return [f64::NAN; 4];
+    }
+    let mut r0 = coefficients[n - 1];
+    let mut r1 = r0;
+    let mut r2 = r0;
+    let mut r3 = r0;
+
+    for i in (0..n - 1).rev() {
+        let node = z[i];
+        let c = coefficients[i];
+        r0 = r0 * (x0 - node) + c;
+        r1 = r1 * (x1 - node) + c;
+        r2 = r2 * (x2 - node) + c;
+        r3 = r3 * (x3 - node) + c;
+    }
+
+    [r0, r1, r2, r3]
+}
+
+#[allow(clippy::too_many_arguments)]
+fn hermite_evaluate8(
+    z: &[f64],
+    coefficients: &[f64],
+    x0: f64,
+    x1: f64,
+    x2: f64,
+    x3: f64,
+    x4: f64,
+    x5: f64,
+    x6: f64,
+    x7: f64,
+) -> [f64; 8] {
+    let n = coefficients.len();
+    if n == 0 {
+        return [f64::NAN; 8];
+    }
+    let mut r0 = coefficients[n - 1];
+    let mut r1 = r0;
+    let mut r2 = r0;
+    let mut r3 = r0;
+    let mut r4 = r0;
+    let mut r5 = r0;
+    let mut r6 = r0;
+    let mut r7 = r0;
+
+    for i in (0..n - 1).rev() {
+        let node = z[i];
+        let c = coefficients[i];
+        r0 = r0 * (x0 - node) + c;
+        r1 = r1 * (x1 - node) + c;
+        r2 = r2 * (x2 - node) + c;
+        r3 = r3 * (x3 - node) + c;
+        r4 = r4 * (x4 - node) + c;
+        r5 = r5 * (x5 - node) + c;
+        r6 = r6 * (x6 - node) + c;
+        r7 = r7 * (x7 - node) + c;
+    }
+
+    [r0, r1, r2, r3, r4, r5, r6, r7]
 }
 
 #[cfg(test)]

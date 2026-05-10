@@ -14,7 +14,7 @@ impl SplineSegment {
     #[inline]
     pub(crate) fn eval(&self, x_val: f64) -> f64 {
         let dx = x_val - self.x;
-        self.a + self.b * dx + self.c * dx * dx + self.d * dx * dx * dx
+        self.a + dx * (self.b + dx * (self.c + dx * self.d))
     }
 }
 
@@ -22,6 +22,7 @@ impl SplineSegment {
 pub(crate) struct CubicSplineCore {
     x_values: Vec<f64>,
     segments: Vec<SplineSegment>,
+    uniform_inv_step: Option<f64>,
     fitted: bool,
 }
 
@@ -30,6 +31,7 @@ impl CubicSplineCore {
         Self {
             x_values: Vec::new(),
             segments: Vec::new(),
+            uniform_inv_step: None,
             fitted: false,
         }
     }
@@ -55,6 +57,7 @@ impl CubicSplineCore {
         }
 
         self.x_values = x;
+        self.uniform_inv_step = detect_uniform_inv_step(&self.x_values);
         self.segments = compute_not_a_knot_spline(&self.x_values, &y);
 
         if self.segments.is_empty() {
@@ -86,6 +89,24 @@ impl CubicSplineCore {
         }
     }
 
+    fn fill_many_uniform(&self, xs: &[f64], out: &mut [f64], inv_step: f64) {
+        let n = self.x_values.len();
+        let x_first = self.x_values[0];
+        let x_last = self.x_values[n - 1];
+        let last_seg = n - 2;
+
+        for (slot, &x) in out.iter_mut().zip(xs.iter()) {
+            if x <= x_first {
+                *slot = self.segments[0].eval(x);
+            } else if x >= x_last {
+                *slot = self.segments[last_seg].eval(x);
+            } else {
+                let idx = ((x - x_first) * inv_step).floor() as usize;
+                *slot = self.segments[idx.min(last_seg)].eval(x);
+            }
+        }
+    }
+
     #[inline]
     pub(crate) fn eval_internal(&self, val: f64) -> f64 {
         let n = self.x_values.len();
@@ -94,6 +115,11 @@ impl CubicSplineCore {
         }
         if val >= self.x_values[n - 1] {
             return self.segments[n - 2].eval(val);
+        }
+
+        if let Some(inv_step) = self.uniform_inv_step {
+            let idx = ((val - self.x_values[0]) * inv_step).floor() as usize;
+            return self.segments[idx.min(n - 2)].eval(val);
         }
 
         let idx = match self
@@ -176,6 +202,11 @@ impl InterpolationCore for CubicSplineCore {
             return Ok(());
         }
 
+        if let Some(inv_step) = self.uniform_inv_step {
+            self.fill_many_uniform(xs, out, inv_step);
+            return Ok(());
+        }
+
         let mut i = 0;
         while i + 1 < xs.len() {
             out[i] = self.eval_internal(xs[i]);
@@ -187,6 +218,23 @@ impl InterpolationCore for CubicSplineCore {
         }
         Ok(())
     }
+}
+
+fn detect_uniform_inv_step(x_values: &[f64]) -> Option<f64> {
+    if x_values.len() < 3 {
+        return None;
+    }
+    let step = x_values[1] - x_values[0];
+    if step <= 0.0 || !step.is_finite() {
+        return None;
+    }
+    let tolerance = step.abs() * 1e-10 + f64::EPSILON;
+    for pair in x_values.windows(2).skip(1) {
+        if ((pair[1] - pair[0]) - step).abs() > tolerance {
+            return None;
+        }
+    }
+    Some(1.0 / step)
 }
 
 fn solve_tridiagonal(a: &[f64], b: &[f64], c: &[f64], d: &[f64]) -> Vec<f64> {

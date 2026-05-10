@@ -9,3 +9,6 @@ pub mod linear_core;
 pub mod newton_core;
 pub mod quadratic_core;
 pub mod rbf_core;
+
+#[cfg(test)]
+mod perf_harness;

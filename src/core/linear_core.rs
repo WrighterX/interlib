@@ -6,6 +6,7 @@ pub(crate) struct LinearCore {
     x_values: Vec<f64>,
     y_values: Vec<f64>,
     slopes: Vec<f64>,
+    uniform_inv_step: Option<f64>,
     fitted: bool,
 }
 
@@ -15,6 +16,7 @@ impl LinearCore {
             x_values: Vec::new(),
             y_values: Vec::new(),
             slopes: Vec::new(),
+            uniform_inv_step: None,
             fitted: false,
         }
     }
@@ -61,6 +63,7 @@ impl LinearCore {
         self.slopes = (0..x.len() - 1)
             .map(|i| (y[i + 1] - y[i]) / (x[i + 1] - x[i]))
             .collect();
+        self.uniform_inv_step = detect_uniform_inv_step(&x);
         self.x_values = x;
         self.y_values = y;
         self.fitted = true;
@@ -112,6 +115,7 @@ impl LinearCore {
         let n = self.x_values.len();
         if n < 2 {
             self.slopes.clear();
+            self.uniform_inv_step = None;
             return Ok(());
         }
 
@@ -132,6 +136,7 @@ impl LinearCore {
             self.slopes.insert(idx, slope_right);
         }
 
+        self.uniform_inv_step = detect_uniform_inv_step(&self.x_values);
         Ok(())
     }
 
@@ -161,6 +166,7 @@ impl InterpolationCore for LinearCore {
             &self.x_values,
             &self.y_values,
             &self.slopes,
+            self.uniform_inv_step,
             x,
         ))
     }
@@ -187,22 +193,50 @@ impl InterpolationCore for LinearCore {
             return Ok(());
         }
 
+        if let Some(inv_step) = self.uniform_inv_step {
+            linear_fill_many_uniform(&self.x_values, &self.y_values, &self.slopes, inv_step, xs, out);
+            return Ok(());
+        }
+
         let mut i = 0;
         while i + 1 < xs.len() {
-            out[i] = linear_interpolate_single(&self.x_values, &self.y_values, &self.slopes, xs[i]);
-            out[i + 1] =
-                linear_interpolate_single(&self.x_values, &self.y_values, &self.slopes, xs[i + 1]);
+            out[i] = linear_interpolate_single(
+                &self.x_values,
+                &self.y_values,
+                &self.slopes,
+                self.uniform_inv_step,
+                xs[i],
+            );
+            out[i + 1] = linear_interpolate_single(
+                &self.x_values,
+                &self.y_values,
+                &self.slopes,
+                self.uniform_inv_step,
+                xs[i + 1],
+            );
             i += 2;
         }
         if i < xs.len() {
-            out[i] = linear_interpolate_single(&self.x_values, &self.y_values, &self.slopes, xs[i]);
+            out[i] = linear_interpolate_single(
+                &self.x_values,
+                &self.y_values,
+                &self.slopes,
+                self.uniform_inv_step,
+                xs[i],
+            );
         }
         Ok(())
     }
 }
 
 #[inline]
-fn linear_interpolate_single(x_values: &[f64], y_values: &[f64], slopes: &[f64], x: f64) -> f64 {
+fn linear_interpolate_single(
+    x_values: &[f64],
+    y_values: &[f64],
+    slopes: &[f64],
+    uniform_inv_step: Option<f64>,
+    x: f64,
+) -> f64 {
     let n = x_values.len();
 
     if n == 0 {
@@ -216,6 +250,12 @@ fn linear_interpolate_single(x_values: &[f64], y_values: &[f64], slopes: &[f64],
     }
     if x >= x_values[n - 1] {
         return y_values[n - 1];
+    }
+
+    if let Some(inv_step) = uniform_inv_step {
+        let idx = ((x - x_values[0]) * inv_step).floor() as usize;
+        let idx = idx.min(n - 2);
+        return y_values[idx] + slopes[idx] * (x - x_values[idx]);
     }
 
     let idx = match x_values.binary_search_by(|v| v.partial_cmp(&x).unwrap()) {
@@ -236,6 +276,58 @@ fn linear_interpolate_single(x_values: &[f64], y_values: &[f64], slopes: &[f64],
     };
 
     y_values[idx] + slopes[idx] * (x - x_values[idx])
+}
+
+fn detect_uniform_inv_step(x_values: &[f64]) -> Option<f64> {
+    if x_values.len() < 3 {
+        return None;
+    }
+    let step = x_values[1] - x_values[0];
+    if step <= 0.0 || !step.is_finite() {
+        return None;
+    }
+    let tolerance = step.abs() * 1e-10 + f64::EPSILON;
+    for pair in x_values.windows(2).skip(1) {
+        if ((pair[1] - pair[0]) - step).abs() > tolerance {
+            return None;
+        }
+    }
+    Some(1.0 / step)
+}
+
+fn linear_fill_many_uniform(
+    x_values: &[f64],
+    y_values: &[f64],
+    slopes: &[f64],
+    inv_step: f64,
+    xs: &[f64],
+    out: &mut [f64],
+) {
+    let n = x_values.len();
+    if n == 0 {
+        out.fill(f64::NAN);
+        return;
+    }
+    if n == 1 {
+        out.fill(y_values[0]);
+        return;
+    }
+
+    let x_first = x_values[0];
+    let x_last = x_values[n - 1];
+    let y_first = y_values[0];
+    let y_last = y_values[n - 1];
+    for (slot, &x) in out.iter_mut().zip(xs.iter()) {
+        if x <= x_first {
+            *slot = y_first;
+        } else if x >= x_last {
+            *slot = y_last;
+        } else {
+            let idx = ((x - x_first) * inv_step).floor() as usize;
+            let idx = idx.min(n - 2);
+            *slot = y_values[idx] + slopes[idx] * (x - x_values[idx]);
+        }
+    }
 }
 
 fn linear_fill_many_sorted(
