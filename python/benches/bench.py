@@ -49,7 +49,9 @@ def _build_chebyshev(x_train, y_train, **kwargs):
         x_max=float(x_train.max()),
         use_clenshaw=True,
     )
-    interp.fit(y_train)
+    nodes = np.asarray(interp.get_nodes(), dtype=float)
+    node_values = np.interp(nodes, x_train, y_train)
+    interp.fit(node_values)
     return interp
 
 
