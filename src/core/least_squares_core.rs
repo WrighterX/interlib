@@ -51,13 +51,7 @@ fn evaluate_polynomial(coefficients: &[f64], x: f64) -> f64 {
     result
 }
 
-fn evaluate_polynomial4(
-    coefficients: &[f64],
-    x0: f64,
-    x1: f64,
-    x2: f64,
-    x3: f64,
-) -> [f64; 4] {
+fn evaluate_polynomial4(coefficients: &[f64], x0: f64, x1: f64, x2: f64, x3: f64) -> [f64; 4] {
     let mut r0 = 0.0;
     let mut r1 = 0.0;
     let mut r2 = 0.0;
@@ -265,13 +259,8 @@ impl InterpolationCore for LeastSquaresCore {
             i += 8;
         }
         while i + 3 < n {
-            let values = evaluate_polynomial4(
-                &self.coefficients,
-                xs[i],
-                xs[i + 1],
-                xs[i + 2],
-                xs[i + 3],
-            );
+            let values =
+                evaluate_polynomial4(&self.coefficients, xs[i], xs[i + 1], xs[i + 2], xs[i + 3]);
             out[i] = values[0];
             out[i + 1] = values[1];
             out[i + 2] = values[2];

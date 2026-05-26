@@ -245,6 +245,7 @@ fn chebyshev_evaluate_clenshaw4(
     ]
 }
 
+#[allow(clippy::too_many_arguments)]
 fn chebyshev_evaluate_clenshaw8(
     coefficients: &[f64],
     x0: f64,
@@ -344,6 +345,7 @@ fn chebyshev_evaluate_clenshaw8(
     ]
 }
 
+#[allow(clippy::too_many_arguments)]
 fn chebyshev_evaluate_clenshaw16(
     coefficients: &[f64],
     x0: f64,
@@ -1362,10 +1364,7 @@ impl InterpolationCore for ChebyshevCore {
                         value, self.x_min, self.x_max
                     ));
                 }
-                out[i] = chebyshev_evaluate_clenshaw(
-                    &self.coefficients,
-                    value * scale + offset,
-                );
+                out[i] = chebyshev_evaluate_clenshaw(&self.coefficients, value * scale + offset);
                 i += 1;
             }
             return Ok(());

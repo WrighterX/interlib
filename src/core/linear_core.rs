@@ -194,7 +194,14 @@ impl InterpolationCore for LinearCore {
         }
 
         if let Some(inv_step) = self.uniform_inv_step {
-            linear_fill_many_uniform(&self.x_values, &self.y_values, &self.slopes, inv_step, xs, out);
+            linear_fill_many_uniform(
+                &self.x_values,
+                &self.y_values,
+                &self.slopes,
+                inv_step,
+                xs,
+                out,
+            );
             return Ok(());
         }
 

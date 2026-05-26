@@ -1,3 +1,4 @@
+use crate::core::rbf_core::{RBFCore, RBFKernel};
 /// Radial Basis Function (RBF) interpolation for Python plus FFI consumers.
 ///
 /// This module exposes the Python-facing `RBFInterpolator`, which wraps the
@@ -5,7 +6,6 @@
 /// between the Python bindings and the MATLAB/FFI layers. Supported kernels are
 /// Gaussian, multiquadric, inverse multiquadric, thin plate spline, and linear.
 use crate::python::pywrap_macros::py_call_impl;
-use crate::core::rbf_core::{RBFCore, RBFKernel};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 

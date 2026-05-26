@@ -2,6 +2,20 @@
 name = "interlib"
 version = "0.1.0"
 edition = "2024"
+description = "Rust-backed interpolation algorithms exposed to Python."
+license = "MIT"
+repository = "https://github.com/WrighterX/interlib"
+readme = "README.md"
+exclude = [
+    ".github/**",
+    "dist/**",
+    "target/**",
+    ".venv/**",
+    "matlab/**",
+    "scripts/**",
+    "python/benches/**",
+    "python/case_studies/**",
+]
 
 [features]
 default = ["python"]

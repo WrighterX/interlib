@@ -1,3 +1,4 @@
+use crate::core::quadratic_core::QuadraticCore;
 /// Piecewise Quadratic Interpolation Module
 ///
 /// This module implements piecewise quadratic interpolation using overlapping
@@ -78,7 +79,6 @@
 /// result = interp(2.5)  # Should be close to 6.25
 /// ```
 use crate::python::pywrap_macros::py_call_impl;
-use crate::core::quadratic_core::QuadraticCore;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 

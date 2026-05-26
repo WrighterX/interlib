@@ -308,7 +308,6 @@ fn bench_rbf() -> BenchResult {
     }
 }
 
-
 fn bench_linear_broad() -> BenchResult {
     let x_small = linspace(0.0, 10.0, 32);
     let y_small = training_values(&x_small);
@@ -336,7 +335,10 @@ fn bench_linear_broad() -> BenchResult {
             .fit(black_box(x_large.clone()), black_box(y_large.clone()))
             .unwrap();
         large
-            .fill_many(black_box(&xs_large_sorted), black_box(&mut out_large_sorted))
+            .fill_many(
+                black_box(&xs_large_sorted),
+                black_box(&mut out_large_sorted),
+            )
             .unwrap();
         large
             .fill_many(black_box(&xs_large_mixed), black_box(&mut out_large_mixed))
@@ -379,7 +381,10 @@ fn bench_quadratic_broad() -> BenchResult {
             .fit(black_box(x_large.clone()), black_box(y_large.clone()))
             .unwrap();
         large
-            .fill_many(black_box(&xs_large_sorted), black_box(&mut out_large_sorted))
+            .fill_many(
+                black_box(&xs_large_sorted),
+                black_box(&mut out_large_sorted),
+            )
             .unwrap();
         large
             .fill_many(black_box(&xs_large_mixed), black_box(&mut out_large_mixed))
@@ -422,7 +427,10 @@ fn bench_cubic_spline_broad() -> BenchResult {
             .fit(black_box(x_large.clone()), black_box(y_large.clone()))
             .unwrap();
         large
-            .fill_many(black_box(&xs_large_sorted), black_box(&mut out_large_sorted))
+            .fill_many(
+                black_box(&xs_large_sorted),
+                black_box(&mut out_large_sorted),
+            )
             .unwrap();
         large
             .fill_many(black_box(&xs_large_mixed), black_box(&mut out_large_mixed))

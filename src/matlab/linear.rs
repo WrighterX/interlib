@@ -2,8 +2,8 @@ use crate::core::core_trait::InterpolationCore;
 use std::ffi::c_void;
 use std::os::raw::c_char;
 
-use crate::matlab::{clear_last_error, fail, last_error_string, success, write_last_error};
 use crate::core::linear_core::LinearCore;
+use crate::matlab::{clear_last_error, fail, last_error_string, success, write_last_error};
 
 fn core_from_handle(handle: *mut c_void) -> Result<*mut LinearCore, &'static str> {
     if handle.is_null() {

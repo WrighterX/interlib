@@ -5,12 +5,15 @@ interlib is a Python library for interpolation methods designed as an alternativ
 
 ## Installation
 
-### End users (wheel)
-
-Install from a built wheel:
-
 ```bash
-pip install interlib-<version>-<platform>.whl
+pip install interlib-rs
+```
+
+The PyPI distribution name is `interlib-rs`, but the Python import name is still
+`interlib`:
+
+```python
+from interlib import LinearInterpolator
 ```
 
 ### Local development (recommended)

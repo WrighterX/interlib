@@ -392,9 +392,9 @@ fn rbf_fill_many_gaussian_uniform_centers(
 
         let mut kernel = kernel_center;
         let mut ratio = (two_epsilon_sq_step * d - step_sq).exp();
-        for j in center_idx + 1..x_values.len() {
+        for &weight in weights.iter().take(x_values.len()).skip(center_idx + 1) {
             kernel *= ratio;
-            result += weights[j] * kernel;
+            result += weight * kernel;
             ratio *= step_kernel_decay;
         }
 

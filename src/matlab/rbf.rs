@@ -3,8 +3,8 @@ use std::ffi::c_void;
 use std::os::raw::{c_char, c_int};
 use std::ptr;
 
-use crate::matlab::{clear_last_error, fail, last_error_string, success, write_last_error};
 use crate::core::rbf_core::{RBFCore, RBFKernel};
+use crate::matlab::{clear_last_error, fail, last_error_string, success, write_last_error};
 
 fn fail_ptr(message: impl Into<String>) -> *mut c_void {
     fail(message);

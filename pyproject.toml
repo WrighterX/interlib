@@ -3,13 +3,26 @@ requires = ["maturin>=1.10,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "interlib"
+name = "interlib-rs"
 requires-python = ">=3.10"
+description = "Rust-backed interpolation algorithms for Python."
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "WrighterX" }]
+keywords = ["interpolation", "numerical-methods", "rust", "numpy"]
 classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Mathematics",
     "Typing :: Typed",
     "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dynamic = ["version"]
 
@@ -22,4 +35,16 @@ dev = [
     "scipy",
     "maturin",
     "matplotlib>=3.10.8",
+    "twine>=6",
 ]
+
+[project.urls]
+Homepage = "https://github.com/WrighterX/interlib"
+Repository = "https://github.com/WrighterX/interlib"
+Issues = "https://github.com/WrighterX/interlib/issues"
+
+[tool.maturin]
+bindings = "pyo3"
+python-source = "python"
+module-name = "interlib.interlib"
+features = ["python"]

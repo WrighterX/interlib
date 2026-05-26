@@ -162,14 +162,7 @@ fn newton_evaluate(xs: &[f64], coef: &[f64], x: f64) -> f64 {
     result
 }
 
-fn newton_evaluate4(
-    xs: &[f64],
-    coef: &[f64],
-    x0: f64,
-    x1: f64,
-    x2: f64,
-    x3: f64,
-) -> [f64; 4] {
+fn newton_evaluate4(xs: &[f64], coef: &[f64], x0: f64, x1: f64, x2: f64, x3: f64) -> [f64; 4] {
     let n = coef.len();
     let mut r0 = coef[n - 1];
     let mut r1 = r0;
